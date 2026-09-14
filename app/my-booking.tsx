@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,22 +11,309 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
+
+const API_URL = 'http://10.164.217.66:5000';
+
+interface Booking {
+  id: number;
+  bookingId: string;
+  userId?: number;
+
+  // Required for rescheduling
+  slotId: number;
+
+  commodity: string;
+  quantityQuintals: number | string;
+
+  status:
+    | 'CONFIRMED'
+    | 'CANCELLED'
+    | 'COMPLETED'
+    | 'NO_SHOW';
+
+  tokenNumber: string | null;
+  tokenStatus: string;
+  estimatedWaitMin: number | null;
+  bookedAt: string;
+
+  slot: {
+    slotDate: string;
+    startTime: string;
+    endTime: string;
+
+    center: {
+      id: number;
+      name: string;
+      address: string;
+      village: string | null;
+      district: string;
+      state: string;
+    };
+  };
+}
 
 export default function MyBookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>(
-    'upcoming'
+  const [activeTab, setActiveTab] = useState<
+    'upcoming' | 'past'
+  >('upcoming');
+
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [cancellingId, setCancellingId] =
+    useState<string | null>(null);
+
+  /* ============================================================
+     FETCH BOOKINGS
+  ============================================================ */
+
+  useEffect(() => {
+    fetchBookings();
+  }, []);
+
+  async function fetchBookings() {
+    try {
+      setLoading(true);
+      setError('');
+
+      const token =
+        await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        throw new Error(
+          'Authentication token not found'
+        );
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/bookings/my`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message ||
+            'Failed to fetch bookings'
+        );
+      }
+
+      setBookings(result.data || []);
+    } catch (fetchError) {
+      console.error(
+        'Fetch bookings error:',
+        fetchError
+      );
+
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : 'Unable to load your bookings.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /* ============================================================
+     DATE / TIME HELPERS
+  ============================================================ */
+
+  function formatDate(value: string) {
+    return new Date(value).toLocaleDateString(
+      'en-US',
+      {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }
+    );
+  }
+
+  function formatTime(value: string) {
+    return new Date(value).toLocaleTimeString(
+      'en-US',
+      {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'UTC',
+      }
+    );
+  }
+
+  function isUpcoming(booking: Booking) {
+    return (
+      booking.status === 'CONFIRMED' &&
+      new Date(
+        booking.slot.startTime
+      ).getTime() >= Date.now()
+    );
+  }
+
+  /* ============================================================
+     FILTER BOOKINGS
+  ============================================================ */
+
+  const upcomingBookings =
+    bookings.filter(isUpcoming);
+
+  const pastBookings = bookings.filter(
+    (booking) => !isUpcoming(booking)
   );
+
+  const visibleBookings =
+    activeTab === 'upcoming'
+      ? upcomingBookings
+      : pastBookings;
+
+  /* ============================================================
+     CANCEL BOOKING
+  ============================================================ */
+
+  function handleCancelBooking(
+    booking: Booking
+  ) {
+    Alert.alert(
+      'Cancel booking?',
+      `Are you sure you want to cancel your booking at ${booking.slot.center.name}?`,
+      [
+        {
+          text: 'Keep booking',
+          style: 'cancel',
+        },
+        {
+          text: 'Cancel booking',
+          style: 'destructive',
+          onPress: () =>
+            cancelBooking(booking.bookingId),
+        },
+      ]
+    );
+  }
+
+  async function cancelBooking(
+    bookingId: string
+  ) {
+    try {
+      setCancellingId(bookingId);
+
+      const token =
+        await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        throw new Error(
+          'Authentication token not found'
+        );
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/bookings/${bookingId}/cancel`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message ||
+            'Failed to cancel booking'
+        );
+      }
+
+      await fetchBookings();
+
+      Alert.alert(
+        'Booking cancelled',
+        'Your procurement booking has been cancelled successfully.'
+      );
+    } catch (cancelError) {
+      console.error(
+        'Cancel booking error:',
+        cancelError
+      );
+
+      Alert.alert(
+        'Unable to cancel',
+        cancelError instanceof Error
+          ? cancelError.message
+          : 'Something went wrong. Please try again.'
+      );
+    } finally {
+      setCancellingId(null);
+    }
+  }
+
+  /* ============================================================
+     RESCHEDULE BOOKING
+  ============================================================ */
+
+  function handleRescheduleBooking(
+    booking: Booking
+  ) {
+    router.push({
+      pathname: '/select-slot',
+
+      params: {
+        // Tell select-slot that this is rescheduling
+        mode: 'reschedule',
+
+        // Existing booking
+        bookingId: booking.bookingId,
+
+        // Center
+        centerId: String(
+          booking.slot.center.id
+        ),
+
+        centerName:
+          booking.slot.center.name,
+
+        // Current slot
+        currentSlotId: String(
+          booking.slotId
+        ),
+
+        // Existing booking information
+        crop: booking.commodity,
+
+        quantity: String(
+          booking.quantityQuintals
+        ),
+      },
+    });
+  }
+
+  /* ============================================================
+     SCREEN
+  ============================================================ */
 
   return (
     <View style={styles.container}>
+
       {/* Header */}
       <View
         style={[
           styles.header,
-          { paddingTop: insets.top + 8 },
+          {
+            paddingTop:
+              insets.top + 8,
+          },
         ]}
       >
         <Pressable
@@ -38,35 +327,48 @@ export default function MyBookingScreen() {
           />
         </Pressable>
 
-        <Text style={styles.headerTitle}>My Booking</Text>
+        <Text style={styles.headerTitle}>
+          My Booking
+        </Text>
 
-        <View style={styles.headerButton} />
+        <View
+          style={styles.headerButton}
+        />
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 30 },
+          {
+            paddingBottom:
+              insets.bottom + 30,
+          },
         ]}
       >
+
         {/* Intro */}
         <Text style={styles.pageTitle}>
           Your Procurement Visits
         </Text>
 
         <Text style={styles.pageSubtitle}>
-          Manage your upcoming and previous bookings.
+          Manage your upcoming and previous
+          bookings.
         </Text>
 
         {/* Tabs */}
         <View style={styles.tabContainer}>
+
           <Pressable
             style={[
               styles.tab,
-              activeTab === 'upcoming' && styles.activeTab,
+              activeTab === 'upcoming' &&
+                styles.activeTab,
             ]}
-            onPress={() => setActiveTab('upcoming')}
+            onPress={() =>
+              setActiveTab('upcoming')
+            }
           >
             <Text
               style={[
@@ -82,110 +384,282 @@ export default function MyBookingScreen() {
           <Pressable
             style={[
               styles.tab,
-              activeTab === 'past' && styles.activeTab,
+              activeTab === 'past' &&
+                styles.activeTab,
             ]}
-            onPress={() => setActiveTab('past')}
+            onPress={() =>
+              setActiveTab('past')
+            }
           >
             <Text
               style={[
                 styles.tabText,
-                activeTab === 'past' && styles.activeTabText,
+                activeTab === 'past' &&
+                  styles.activeTabText,
               ]}
             >
               Past
             </Text>
           </Pressable>
+
         </View>
 
-        {/* Upcoming */}
-        {activeTab === 'upcoming' ? (
-          <>
-            <BookingCard
-              status="Confirmed"
-              statusType="confirmed"
-              center="Green Valley Center"
-              location="Muzaffarpur, Bihar"
-              date="18 Sep 2026"
-              time="10:30 AM"
-              token="A-76"
-              crop="Wheat"
-              quantity="32 quintals"
-              bookingId="KS-260918-0142"
-              onToken={() =>
-                router.push({
-                  pathname: '/my-token',
-                  params: {
-                    centerName: 'Green Valley Center',
-                    date: '18 Sep 2026',
-                    time: '10:30 AM',
-                    crop: 'Wheat',
-                    quantity: '32',
-                    bookingId: 'KS-260918-0142',
-                    tokenNumber: 'A-76',
-                  },
-                })
-              }
+        {/* ======================================================
+            BOOKING LIST
+        ====================================================== */}
+
+        {loading ? (
+          <View style={styles.stateCard}>
+            <ActivityIndicator
+              size="small"
+              color="#2F7D4A"
             />
 
-            <View style={styles.aiCard}>
-              <View style={styles.aiIcon}>
-                <Ionicons
-                  name="sparkles"
-                  size={18}
-                  color="#D99A27"
-                />
-              </View>
+            <Text style={styles.stateText}>
+              Loading your bookings...
+            </Text>
+          </View>
 
-              <View style={styles.aiContent}>
-                <Text style={styles.aiTitle}>
-                  AI Queue Prediction
-                </Text>
+        ) : error ? (
+          <View style={styles.stateCard}>
 
-                <Text style={styles.aiText}>
-                  Current estimated waiting time at your
-                  centre is{' '}
-                  <Text style={styles.aiBold}>
-                    25 minutes
-                  </Text>
-                  . We'll update this as the queue changes.
-                </Text>
-              </View>
-            </View>
-          </>
+            <Ionicons
+              name="alert-circle-outline"
+              size={25}
+              color="#A26C6C"
+            />
+
+            <Text style={styles.stateTitle}>
+              Unable to load bookings
+            </Text>
+
+            <Text style={styles.stateText}>
+              {error}
+            </Text>
+
+            <Pressable
+              style={styles.retryButton}
+              onPress={fetchBookings}
+            >
+              <Text
+                style={styles.retryButtonText}
+              >
+                Try again
+              </Text>
+            </Pressable>
+
+          </View>
+
+        ) : visibleBookings.length === 0 ? (
+          <View style={styles.stateCard}>
+
+            <Ionicons
+              name={
+                activeTab === 'upcoming'
+                  ? 'calendar-outline'
+                  : 'time-outline'
+              }
+              size={28}
+              color="#8A9891"
+            />
+
+            <Text style={styles.stateTitle}>
+              {activeTab === 'upcoming'
+                ? 'No upcoming bookings'
+                : 'No booking history'}
+            </Text>
+
+            <Text style={styles.stateText}>
+              {activeTab === 'upcoming'
+                ? 'Book a procurement slot to see it here.'
+                : 'Your completed and cancelled bookings will appear here.'}
+            </Text>
+
+          </View>
+
         ) : (
           <>
-            <BookingCard
-              status="Completed"
-              statusType="completed"
-              center="Kisan Seva Kendra"
-              location="Muzaffarpur, Bihar"
-              date="02 Sep 2026"
-              time="11:00 AM"
-              token="A-41"
-              crop="Rice"
-              quantity="25 quintals"
-              bookingId="KS-260902-0098"
-              completed
-            />
 
-            <BookingCard
-              status="Completed"
-              statusType="completed"
-              center="APMC Procurement Center"
-              location="Muzaffarpur, Bihar"
-              date="20 Aug 2026"
-              time="09:30 AM"
-              token="B-18"
-              crop="Wheat"
-              quantity="30 quintals"
-              bookingId="KS-260820-0061"
-              completed
-            />
+            {visibleBookings.map(
+              (booking) => (
+                <BookingCard
+                  key={booking.id}
+
+                  status={
+                    booking.status ===
+                    'CONFIRMED'
+                      ? 'Confirmed'
+                      : booking.status ===
+                        'COMPLETED'
+                      ? 'Completed'
+                      : booking.status ===
+                        'CANCELLED'
+                      ? 'Cancelled'
+                      : 'No Show'
+                  }
+
+                  statusType={
+                    booking.status ===
+                    'CONFIRMED'
+                      ? 'confirmed'
+                      : 'completed'
+                  }
+
+                  center={
+                    booking.slot.center.name
+                  }
+
+                  location={`${booking.slot.center.district}, ${booking.slot.center.state}`}
+
+                  date={formatDate(
+                    booking.slot.slotDate
+                  )}
+
+                  time={formatTime(
+                    booking.slot.startTime
+                  )}
+
+                  token={
+                    booking.tokenNumber ??
+                    '—'
+                  }
+
+                  crop={
+                    booking.commodity
+                  }
+
+                  quantity={`${booking.quantityQuintals} quintals`}
+
+                  bookingId={
+                    booking.bookingId
+                  }
+
+                  completed={
+                    booking.status !==
+                    'CONFIRMED'
+                  }
+
+                  cancelling={
+                    cancellingId ===
+                    booking.bookingId
+                  }
+
+                  onCancel={() =>
+                    handleCancelBooking(
+                      booking
+                    )
+                  }
+
+                  onReschedule={() =>
+                    handleRescheduleBooking(
+                      booking
+                    )
+                  }
+
+                  onToken={() =>
+                    router.push({
+                      pathname:
+                        '/my-token',
+
+                      params: {
+                        centerName:
+                          booking
+                            .slot
+                            .center
+                            .name,
+
+                        date: formatDate(
+                          booking
+                            .slot
+                            .slotDate
+                        ),
+
+                        time: formatTime(
+                          booking
+                            .slot
+                            .startTime
+                        ),
+
+                        crop:
+                          booking.commodity,
+
+                        quantity:
+                          String(
+                            booking.quantityQuintals
+                          ),
+
+                        bookingId:
+                          booking.bookingId,
+
+                        tokenNumber:
+                          booking.tokenNumber ??
+                          '',
+                      },
+                    })
+                  }
+                />
+              )
+            )}
+
+            {/* AI Queue Prediction */}
+            {activeTab ===
+              'upcoming' &&
+              upcomingBookings.length >
+                0 && (
+                <View
+                  style={styles.aiCard}
+                >
+
+                  <View
+                    style={styles.aiIcon}
+                  >
+                    <Ionicons
+                      name="sparkles"
+                      size={18}
+                      color="#D99A27"
+                    />
+                  </View>
+
+                  <View
+                    style={styles.aiContent}
+                  >
+
+                    <Text
+                      style={styles.aiTitle}
+                    >
+                      AI Queue Prediction
+                    </Text>
+
+                    <Text
+                      style={styles.aiText}
+                    >
+                      Your estimated waiting
+                      time is{' '}
+                      <Text
+                        style={
+                          styles.aiBold
+                        }
+                      >
+                        {upcomingBookings[0]
+                          .estimatedWaitMin ??
+                          0}{' '}
+                        minutes
+                      </Text>
+                      . We'll update this
+                      as queue conditions
+                      change.
+                    </Text>
+
+                  </View>
+                </View>
+              )}
+
           </>
         )}
 
         {/* Bottom information */}
         <View style={styles.infoCard}>
+
           <Ionicons
             name="information-circle-outline"
             size={19}
@@ -193,18 +667,21 @@ export default function MyBookingScreen() {
           />
 
           <Text style={styles.infoText}>
-            You can reschedule or cancel an upcoming booking
-            before your scheduled slot.
+            You can reschedule or cancel an
+            upcoming booking before your
+            scheduled slot.
           </Text>
+
         </View>
+
       </ScrollView>
     </View>
   );
 }
 
-/* ------------------------------------------------ */
-/* Booking Card                                     */
-/* ------------------------------------------------ */
+/* ============================================================
+   BOOKING CARD
+============================================================ */
 
 function BookingCard({
   status,
@@ -217,11 +694,17 @@ function BookingCard({
   crop,
   quantity,
   bookingId,
+
   completed = false,
+  cancelling = false,
+
+  onCancel,
+  onReschedule,
   onToken,
 }: {
   status: string;
   statusType: 'confirmed' | 'completed';
+
   center: string;
   location: string;
   date: string;
@@ -230,13 +713,20 @@ function BookingCard({
   crop: string;
   quantity: string;
   bookingId: string;
+
   completed?: boolean;
+  cancelling?: boolean;
+
+  onCancel?: () => void;
+  onReschedule?: () => void;
   onToken?: () => void;
 }) {
   return (
     <View style={styles.bookingCard}>
+
       {/* Top row */}
       <View style={styles.cardTopRow}>
+
         <View style={styles.centerIcon}>
           <Ionicons
             name="business-outline"
@@ -245,19 +735,27 @@ function BookingCard({
           />
         </View>
 
-        <View style={styles.centerContent}>
-          <Text style={styles.centerName}>
+        <View
+          style={styles.centerContent}
+        >
+          <Text
+            style={styles.centerName}
+          >
             {center}
           </Text>
 
-          <View style={styles.locationRow}>
+          <View
+            style={styles.locationRow}
+          >
             <Ionicons
               name="location-outline"
               size={13}
               color="#7B857E"
             />
 
-            <Text style={styles.locationText}>
+            <Text
+              style={styles.locationText}
+            >
               {location}
             </Text>
           </View>
@@ -266,7 +764,8 @@ function BookingCard({
         <View
           style={[
             styles.statusBadge,
-            statusType === 'completed'
+            statusType ===
+            'completed'
               ? styles.completedBadge
               : styles.confirmedBadge,
           ]}
@@ -274,7 +773,8 @@ function BookingCard({
           <Text
             style={[
               styles.statusText,
-              statusType === 'completed'
+              statusType ===
+              'completed'
                 ? styles.completedText
                 : styles.confirmedText,
             ]}
@@ -282,11 +782,17 @@ function BookingCard({
             {status}
           </Text>
         </View>
+
       </View>
 
       {/* Date / Time */}
-      <View style={styles.appointmentBox}>
-        <View style={styles.appointmentItem}>
+      <View
+        style={styles.appointmentBox}
+      >
+
+        <View
+          style={styles.appointmentItem}
+        >
           <Ionicons
             name="calendar-outline"
             size={18}
@@ -294,19 +800,33 @@ function BookingCard({
           />
 
           <View>
-            <Text style={styles.appointmentLabel}>
+            <Text
+              style={
+                styles.appointmentLabel
+              }
+            >
               DATE
             </Text>
 
-            <Text style={styles.appointmentValue}>
+            <Text
+              style={
+                styles.appointmentValue
+              }
+            >
               {date}
             </Text>
           </View>
         </View>
 
-        <View style={styles.appointmentDivider} />
+        <View
+          style={
+            styles.appointmentDivider
+          }
+        />
 
-        <View style={styles.appointmentItem}>
+        <View
+          style={styles.appointmentItem}
+        >
           <Ionicons
             name="time-outline"
             size={18}
@@ -314,90 +834,170 @@ function BookingCard({
           />
 
           <View>
-            <Text style={styles.appointmentLabel}>
+            <Text
+              style={
+                styles.appointmentLabel
+              }
+            >
               TIME
             </Text>
 
-            <Text style={styles.appointmentValue}>
+            <Text
+              style={
+                styles.appointmentValue
+              }
+            >
               {time}
             </Text>
           </View>
         </View>
+
       </View>
 
       {/* Token */}
-      <View style={styles.tokenRow}>
+      <View
+        style={styles.tokenRow}
+      >
+
         <View>
-          <Text style={styles.tokenLabel}>
+          <Text
+            style={styles.tokenLabel}
+          >
             TOKEN
           </Text>
 
-          <Text style={styles.tokenValue}>
+          <Text
+            style={styles.tokenValue}
+          >
             {token}
           </Text>
         </View>
 
         <View>
-          <Text style={styles.tokenLabel}>
+          <Text
+            style={styles.tokenLabel}
+          >
             COMMODITY
           </Text>
 
-          <Text style={styles.commodityValue}>
+          <Text
+            style={
+              styles.commodityValue
+            }
+          >
             {crop}
           </Text>
         </View>
 
         <View>
-          <Text style={styles.tokenLabel}>
+          <Text
+            style={styles.tokenLabel}
+          >
             QUANTITY
           </Text>
 
-          <Text style={styles.commodityValue}>
+          <Text
+            style={
+              styles.commodityValue
+            }
+          >
             {quantity}
           </Text>
         </View>
+
       </View>
 
       {/* Booking ID */}
-      <View style={styles.bookingIdRow}>
-        <Text style={styles.bookingIdLabel}>
+      <View
+        style={styles.bookingIdRow}
+      >
+
+        <Text
+          style={
+            styles.bookingIdLabel
+          }
+        >
           Booking ID
         </Text>
 
-        <Text style={styles.bookingIdValue}>
+        <Text
+          style={
+            styles.bookingIdValue
+          }
+        >
           {bookingId}
         </Text>
+
       </View>
 
       {/* Actions */}
       {!completed ? (
-        <View style={styles.actionRow}>
-          <Pressable style={styles.outlineButton}>
+
+        <View
+          style={styles.actionRow}
+        >
+
+          {/* Reschedule */}
+          <Pressable
+            style={
+              styles.outlineButton
+            }
+            onPress={
+              onReschedule
+            }
+          >
             <Ionicons
               name="calendar-outline"
               size={17}
               color="#2F7D4A"
             />
 
-            <Text style={styles.outlineButtonText}>
+            <Text
+              style={
+                styles.outlineButtonText
+              }
+            >
               Reschedule
             </Text>
           </Pressable>
 
-          <Pressable style={styles.outlineButton}>
-            <Ionicons
-              name="close-circle-outline"
-              size={17}
-              color="#A15D4A"
-            />
+          {/* Cancel */}
+          <Pressable
+            style={
+              styles.outlineButton
+            }
+            onPress={onCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? (
+              <ActivityIndicator
+                size="small"
+                color="#A15D4A"
+              />
+            ) : (
+              <>
+                <Ionicons
+                  name="close-circle-outline"
+                  size={17}
+                  color="#A15D4A"
+                />
 
-            <Text style={styles.cancelButtonText}>
-              Cancel
-            </Text>
+                <Text
+                  style={
+                    styles.cancelButtonText
+                  }
+                >
+                  Cancel
+                </Text>
+              </>
+            )}
           </Pressable>
 
+          {/* Token */}
           <Pressable
-            style={styles.tokenButton}
+            style={
+              styles.tokenButton
+            }
             onPress={onToken}
           >
             <Ionicons
@@ -406,14 +1006,29 @@ function BookingCard({
               color="#FFFFFF"
             />
 
-            <Text style={styles.tokenButtonText}>
+            <Text
+              style={
+                styles.tokenButtonText
+              }
+            >
               Token
             </Text>
           </Pressable>
+
         </View>
+
       ) : (
-        <Pressable style={styles.historyButton}>
-          <Text style={styles.historyButtonText}>
+
+        <Pressable
+          style={
+            styles.historyButton
+          }
+        >
+          <Text
+            style={
+              styles.historyButtonText
+            }
+          >
             View Payment Status
           </Text>
 
@@ -423,20 +1038,24 @@ function BookingCard({
             color="#2F7D4A"
           />
         </Pressable>
+
       )}
+
     </View>
   );
 }
 
-/* ------------------------------------------------ */
-/* Styles                                           */
-/* ------------------------------------------------ */
+/* ============================================================
+   STYLES
+============================================================ */
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F6F8F3',
   },
+
+  /* Header */
 
   header: {
     backgroundColor: '#123B2A',
@@ -460,10 +1079,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  /* Scroll */
+
   scrollContent: {
     paddingHorizontal: 18,
     paddingTop: 22,
   },
+
+  /* Intro */
 
   pageTitle: {
     fontSize: 23,
@@ -784,6 +1407,49 @@ const styles = StyleSheet.create({
   aiBold: {
     fontWeight: '800',
     color: '#604916',
+  },
+
+  /* State */
+
+  stateCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E4EAE4',
+    marginBottom: 17,
+  },
+
+  stateTitle: {
+    marginTop: 10,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#18352A',
+    textAlign: 'center',
+  },
+
+  stateText: {
+    marginTop: 5,
+    fontSize: 11,
+    lineHeight: 17,
+    color: '#78837B',
+    textAlign: 'center',
+  },
+
+  retryButton: {
+    marginTop: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 9,
+    backgroundColor: '#EDF5EF',
+  },
+
+  retryButtonText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#2F7D4A',
   },
 
   /* Info */

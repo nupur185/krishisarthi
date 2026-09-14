@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,47 +12,71 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const dates = [
-  { day: '17', month: 'SEP', label: 'Thu' },
-  { day: '18', month: 'SEP', label: 'Fri' },
-  { day: '19', month: 'SEP', label: 'Sat' },
-  { day: '20', month: 'SEP', label: 'Sun' },
-  { day: '21', month: 'SEP', label: 'Mon' },
-];
+const API_URL = 'http://10.164.217.66:5000';
 
-const timeSlots = [
-  {
-    id: '1',
-    time: '09:00 AM',
-    available: true,
-    wait: 18,
-  },
-  {
-    id: '2',
-    time: '10:30 AM',
-    available: true,
-    wait: 25,
-    recommended: true,
-  },
-  {
-    id: '3',
-    time: '12:00 PM',
-    available: true,
-    wait: 31,
-  },
-  {
-    id: '4',
-    time: '02:00 PM',
-    available: true,
-    wait: 39,
-  },
-  {
-    id: '5',
-    time: '03:30 PM',
-    available: false,
-    wait: 0,
-  },
-];
+interface Slot {
+  id: number;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  capacity: number;
+  bookedCount: number;
+  status: string;
+  center: {
+    name: string;
+    district: string;
+    state: string;
+    address?: string;
+    village?: string | null;
+    avgServiceMinutes: number;
+    activeCounters: number;
+  };
+}
+
+interface DisplayDate {
+  key: string;
+  day: string;
+  month: string;
+  label: string;
+}
+
+interface DisplayTimeSlot {
+  id: number;
+  time: string;
+  available: boolean;
+  wait: number;
+  recommended?: boolean;
+  availableCount: number;
+}
+
+function formatDateKey(value: string) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function parseDateKey(value: string) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function formatSummaryDate(value: string) {
+  if (!value) return 'Not selected';
+
+  return parseDateKey(value).toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+function formatTime(value: string) {
+  return new Date(value).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  });
+}
+
 
 export default function SelectSlotScreen() {
   const router = useRouter();
@@ -64,17 +89,168 @@ export default function SelectSlotScreen() {
       ? params.centerName
       : 'Green Valley Center';
 
-  const [selectedDate, setSelectedDate] = useState('18');
-  const [selectedTime, setSelectedTime] = useState('10:30 AM');
+  const centerId =
+    typeof params.centerId === 'string' ? Number(params.centerId) : NaN;
+
+  const mode =
+    typeof params.mode === 'string' ? params.mode : 'booking';
+
+  const rescheduleBookingId =
+    typeof params.bookingId === 'string' ? params.bookingId : '';
+
+  const currentSlotId =
+    typeof params.currentSlotId === 'string'
+      ? Number(params.currentSlotId)
+      : 0;
+
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedTime, setSelectedTime] = useState<number | null>(null);
 
   // Procurement details
-  const [selectedCrop, setSelectedCrop] = useState('Wheat');
-  const [quantity, setQuantity] = useState('');
+  const initialCrop =
+    typeof params.crop === 'string' ? params.crop : 'Wheat';
+
+  const initialQuantity =
+    typeof params.quantity === 'string' ? params.quantity : '';
+
+  const [selectedCrop, setSelectedCrop] = useState(initialCrop);
+  const [quantity, setQuantity] = useState(initialQuantity);
+
+  useEffect(() => {
+    async function fetchSlots() {
+      if (!Number.isInteger(centerId) || centerId <= 0) {
+        setError('Invalid procurement center.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError('');
+
+        const response = await fetch(
+          `${API_URL}/api/slots/center/${centerId}`
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch slots');
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !Array.isArray(result.data)) {
+          throw new Error('Invalid slot response');
+        }
+
+        setSlots(result.data);
+
+        const firstAvailable = result.data.find(
+          (slot: Slot) =>
+            slot.status === 'AVAILABLE' &&
+            slot.bookedCount < slot.capacity &&
+            (mode !== 'reschedule' || slot.id !== currentSlotId)
+        );
+
+        if (firstAvailable) {
+          setSelectedDate(formatDateKey(firstAvailable.slotDate));
+          setSelectedTime(firstAvailable.id);
+        }
+      } catch (fetchError) {
+        console.error('Fetch slots error:', fetchError);
+        setError('Unable to load available slots. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchSlots();
+  }, [centerId, isReschedule, currentSlotId]);
+
+  const dates = useMemo<DisplayDate[]>(() => {
+    const uniqueDates = Array.from(
+      new Set(slots.map((slot) => formatDateKey(slot.slotDate)))
+    );
+
+    return uniqueDates.slice(0, 5).map((dateKey) => {
+      const date = parseDateKey(dateKey);
+
+      return {
+        key: dateKey,
+        day: String(date.getUTCDate()).padStart(2, '0'),
+        month: date.toLocaleDateString('en-US', {
+          month: 'short',
+          timeZone: 'UTC',
+        }).toUpperCase(),
+        label: date.toLocaleDateString('en-US', {
+          weekday: 'short',
+          timeZone: 'UTC',
+        }),
+      };
+    });
+  }, [slots]);
+
+  const timeSlots = useMemo<DisplayTimeSlot[]>(() => {
+    return slots
+      .filter((slot) => formatDateKey(slot.slotDate) === selectedDate)
+      .sort(
+        (a, b) =>
+          new Date(a.startTime).getTime() -
+          new Date(b.startTime).getTime()
+      )
+      .map((slot, _index, sameDaySlots) => {
+        const available =
+          slot.status === 'AVAILABLE' && slot.bookedCount < slot.capacity;
+
+        const wait = Math.ceil(
+          (slot.bookedCount * Number(slot.center.avgServiceMinutes || 0)) /
+            Math.max(Number(slot.center.activeCounters || 1), 1)
+        );
+
+        const availableCount = Math.max(
+          slot.capacity - slot.bookedCount,
+          0
+        );
+
+        const firstAvailable = sameDaySlots.find(
+          (item) =>
+            item.status === 'AVAILABLE' &&
+            item.bookedCount < item.capacity
+        );
+
+        return {
+          id: slot.id,
+          time: formatTime(slot.startTime),
+          available,
+          wait,
+          recommended:
+            available &&
+            slot.id === firstAvailable?.id &&
+            (mode !== 'reschedule' || slot.id !== currentSlotId),
+          availableCount,
+        };
+      });
+  }, [slots, selectedDate]);
+
+  useEffect(() => {
+    if (!selectedDate) return;
+
+    const currentSelection = timeSlots.find(
+      (slot) => slot.id === selectedTime
+    );
+
+    if (!currentSelection) {
+      const firstAvailable = timeSlots.find((slot) => slot.available);
+      setSelectedTime(firstAvailable?.id ?? null);
+    }
+  }, [selectedDate, timeSlots, selectedTime, mode, currentSlotId]);
 
   const selectedSlot = useMemo(
-    () =>
-      timeSlots.find((slot) => slot.time === selectedTime),
-    [selectedTime]
+    () => timeSlots.find((slot) => slot.id === selectedTime),
+    [selectedTime, timeSlots]
   );
 
   return (
@@ -153,14 +329,16 @@ export default function SelectSlotScreen() {
               />
 
               <Text style={styles.locationText}>
-                Muzaffarpur, Bihar
+                {slots[0]
+                  ? `${slots[0].center.district}, ${slots[0].center.state}`
+                  : 'Loading location...'}
               </Text>
             </View>
           </View>
 
           <View style={styles.distanceBadge}>
             <Text style={styles.distanceText}>
-              2.4 km
+              —
             </Text>
           </View>
 
@@ -182,51 +360,69 @@ export default function SelectSlotScreen() {
         </View>
 
 
-        <View style={styles.dateRow}>
+        {loading ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="small" color="#2F7D4A" />
+            <Text style={styles.loadingText}>Loading available dates...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle-outline" size={20} color="#A26C6C" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : dates.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="calendar-outline" size={24} color="#8A9891" />
+            <Text style={styles.emptyTitle}>No dates available</Text>
+            <Text style={styles.emptyText}>
+              This center currently has no available procurement slots.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.dateRow}>
+            {dates.map((date) => {
+              const active = selectedDate === date.key;
 
-          {dates.map((date) => {
-            const active = selectedDate === date.day;
-
-            return (
-              <Pressable
-                key={date.day}
-                onPress={() => setSelectedDate(date.day)}
-                style={[
-                  styles.dateCard,
-                  active && styles.dateCardActive,
-                ]}
-              >
-                <Text
+              return (
+                <Pressable
+                  key={date.key}
+                  onPress={() => setSelectedDate(date.key)}
                   style={[
-                    styles.dateLabel,
-                    active && styles.dateLabelActive,
+                    styles.dateCard,
+                    active && styles.dateCardActive,
                   ]}
                 >
-                  {date.label}
-                </Text>
+                  <Text
+                    style={[
+                      styles.dateLabel,
+                      active && styles.dateLabelActive,
+                    ]}
+                  >
+                    {date.label}
+                  </Text>
 
-                <Text
-                  style={[
-                    styles.dateNumber,
-                    active && styles.dateNumberActive,
-                  ]}
-                >
-                  {date.day}
-                </Text>
+                  <Text
+                    style={[
+                      styles.dateNumber,
+                      active && styles.dateNumberActive,
+                    ]}
+                  >
+                    {date.day}
+                  </Text>
 
-                <Text
-                  style={[
-                    styles.dateMonth,
-                    active && styles.dateMonthActive,
-                  ]}
-                >
-                  {date.month}
-                </Text>
-              </Pressable>
-            );
-          })}
-
-        </View>
+                  <Text
+                    style={[
+                      styles.dateMonth,
+                      active && styles.dateMonthActive,
+                    ]}
+                  >
+                    {date.month}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
 
         {/* ================= TIME ================= */}
@@ -246,90 +442,101 @@ export default function SelectSlotScreen() {
         </View>
 
 
-        <View style={styles.slotsContainer}>
+        {loading ? null : timeSlots.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="time-outline" size={24} color="#8A9891" />
+            <Text style={styles.emptyTitle}>No time slots available</Text>
+            <Text style={styles.emptyText}>
+              Please select another date or check again later.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.slotsContainer}>
+            {timeSlots.map((slot) => {
+              const active = selectedTime === slot.id;
 
-          {timeSlots.map((slot) => {
-            const active = selectedTime === slot.time;
-
-            return (
-              <Pressable
-                key={slot.id}
-                disabled={!slot.available}
-                onPress={() => setSelectedTime(slot.time)}
-                style={[
-                  styles.timeSlot,
-                  active && styles.timeSlotActive,
-                  !slot.available && styles.timeSlotDisabled,
-                ]}
-              >
-
-                <View
+              return (
+                <Pressable
+                  key={slot.id}
+                  disabled={
+                    !slot.available ||
+                    (mode === 'reschedule' && slot.id === currentSlotId)
+                  }
+                  onPress={() => setSelectedTime(slot.id)}
                   style={[
-                    styles.radio,
-                    active && styles.radioActive,
+                    styles.timeSlot,
+                    active && styles.timeSlotActive,
+                    (!slot.available ||
+                      (mode === 'reschedule' && slot.id === currentSlotId)) &&
+                      styles.timeSlotDisabled,
                   ]}
                 >
-                  {active && (
-                    <View style={styles.radioInner} />
-                  )}
-                </View>
-
-                <View style={styles.timeInfo}>
-
-                  <Text
+                  <View
                     style={[
-                      styles.timeText,
-                      active && styles.timeTextActive,
-                      !slot.available &&
-                        styles.disabledText,
+                      styles.radio,
+                      active && styles.radioActive,
                     ]}
                   >
-                    {slot.time}
-                  </Text>
+                    {active && <View style={styles.radioInner} />}
+                  </View>
 
-                  {slot.available ? (
-                    <Text style={styles.waitText}>
-                      Estimated wait: {slot.wait} min
+                  <View style={styles.timeInfo}>
+                    <Text
+                      style={[
+                        styles.timeText,
+                        active && styles.timeTextActive,
+                        (!slot.available ||
+                          (mode === 'reschedule' && slot.id === currentSlotId)) &&
+                          styles.disabledText,
+                      ]}
+                    >
+                      {slot.time}
                     </Text>
-                  ) : (
-                    <Text style={styles.unavailableText}>
-                      Fully booked
-                    </Text>
+
+                    {slot.available &&
+                    !(mode === 'reschedule' && slot.id === currentSlotId) ? (
+                      <Text style={styles.waitText}>
+                        Estimated wait: {slot.wait} min · {slot.availableCount} left
+                      </Text>
+                    ) : (
+                      <Text style={styles.unavailableText}>
+                        {mode === 'reschedule' && slot.id === currentSlotId
+                          ? 'Current booking'
+                          : 'Fully booked'}
+                      </Text>
+                    )}
+                  </View>
+
+                  {slot.recommended && slot.available && (
+                    <View style={styles.aiRecommended}>
+                      <Ionicons
+                        name="sparkles"
+                        size={11}
+                        color="#8B5A00"
+                      />
+
+                      <Text style={styles.aiRecommendedText}>
+                        AI PICK
+                      </Text>
+                    </View>
                   )}
 
-                </View>
-
-                {slot.recommended && slot.available && (
-                  <View style={styles.aiRecommended}>
+                  {slot.available && (
                     <Ionicons
-                      name="sparkles"
-                      size={11}
-                      color="#8B5A00"
+                      name="chevron-forward"
+                      size={17}
+                      color={
+                        active
+                          ? '#2F7D4A'
+                          : '#A2ADA6'
+                      }
                     />
-
-                    <Text style={styles.aiRecommendedText}>
-                      AI PICK
-                    </Text>
-                  </View>
-                )}
-
-                {slot.available && (
-                  <Ionicons
-                    name="chevron-forward"
-                    size={17}
-                    color={
-                      active
-                        ? '#2F7D4A'
-                        : '#A2ADA6'
-                    }
-                  />
-                )}
-
-              </Pressable>
-            );
-          })}
-
-        </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
 
         {/* ================= CROP & QUANTITY ================= */}
@@ -503,8 +710,8 @@ export default function SelectSlotScreen() {
             </View>
 
             <Text style={styles.aiDescription}>
-              {selectedSlot?.wait
-                ? `${selectedTime} currently has good availability with an estimated ${selectedSlot.wait}-minute wait.`
+              {selectedSlot
+                ? `${selectedSlot.time} currently has ${selectedSlot.availableCount} slot${selectedSlot.availableCount === 1 ? '' : 's'} left with an estimated ${selectedSlot.wait}-minute wait.`
                 : 'Choose an available slot to see its recommendation.'}
             </Text>
 
@@ -537,7 +744,7 @@ export default function SelectSlotScreen() {
                 </Text>
 
                 <Text style={styles.summaryValue}>
-                  {selectedDate} Sep 2026
+                  {formatSummaryDate(selectedDate)}
                 </Text>
               </View>
 
@@ -558,7 +765,7 @@ export default function SelectSlotScreen() {
                 </Text>
 
                 <Text style={styles.summaryValue}>
-                  {selectedTime}
+                  {selectedSlot?.time ?? 'Not selected'}
                 </Text>
               </View>
 
@@ -632,18 +839,25 @@ export default function SelectSlotScreen() {
             router.push({
               pathname: '/confirm-booking',
               params: {
+                centerId: String(centerId),
                 centerName,
                 date: selectedDate,
-                time: selectedTime,
+                time: selectedSlot?.time ?? '',
+                slotId: selectedSlot?.id ? String(selectedSlot.id) : '',
                 crop: selectedCrop,
                 quantity: quantity || '0',
+                mode,
+                bookingId: rescheduleBookingId,
+                currentSlotId: String(currentSlotId),
               },
             })
           }
         >
 
           <Text style={styles.continueText}>
-            Continue to Review
+            {mode === 'reschedule'
+              ? 'Continue to Reschedule'
+              : 'Continue to Review'}
           </Text>
 
           <Ionicons
@@ -1232,8 +1446,75 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
+  continueButtonDisabled: {
+    backgroundColor: '#AAB7AE',
+  },
+
+  loadingCard: {
+    minHeight: 82,
+    borderRadius: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E4EAE4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+
+  loadingText: {
+    fontSize: 10,
+    color: '#7B8982',
+  },
+
+  errorCard: {
+    minHeight: 82,
+    borderRadius: 15,
+    backgroundColor: '#FFF7F5',
+    borderWidth: 1,
+    borderColor: '#F0D9D4',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+
+  errorText: {
+    flex: 1,
+    fontSize: 10,
+    lineHeight: 14,
+    color: '#8F5F5F',
+  },
+
+  emptyCard: {
+    minHeight: 105,
+    borderRadius: 15,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E4EAE4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+
+  emptyTitle: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#33463B',
+  },
+
+  emptyText: {
+    marginTop: 4,
+    fontSize: 9,
+    lineHeight: 13,
+    color: '#89958E',
+    textAlign: 'center',
+  },
+
   buttonPressed: {
     opacity: 0.8,
   },
 
 });
+

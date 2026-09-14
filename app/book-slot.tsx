@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -21,33 +21,8 @@ type Center = {
   recommended?: boolean;
 };
 
-const centers: Center[] = [
-  {
-    id: '1',
-    name: 'Green Valley Center',
-    location: 'Muzaffarpur, Bihar',
-    distance: '2.4 km',
-    waitTime: 25,
-    slots: 8,
-    recommended: true,
-  },
-  {
-    id: '2',
-    name: 'Kisan Seva Kendra',
-    location: 'Muzaffarpur, Bihar',
-    distance: '4.1 km',
-    waitTime: 42,
-    slots: 5,
-  },
-  {
-    id: '3',
-    name: 'APMC Procurement Center',
-    location: 'Muzaffarpur, Bihar',
-    distance: '6.8 km',
-    waitTime: 58,
-    slots: 3,
-  },
-];
+
+const API_URL = 'http://10.164.217.66:5000';
 
 export default function BookSlotScreen() {
   const router = useRouter();
@@ -55,6 +30,121 @@ export default function BookSlotScreen() {
 
   const [activeTab, setActiveTab] = useState<'nearby' | 'all'>('nearby');
   const [search, setSearch] = useState('');
+
+  const [centers, setCenters] = useState<Center[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchCenters() {
+      try {
+        setLoading(true);
+        setError('');
+
+        const response = await fetch(`${API_URL}/api/centers`);
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch procurement centers');
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !Array.isArray(result.data)) {
+          throw new Error(result.message || 'Invalid centers response');
+        }
+
+        const centersWithSlots = await Promise.all(
+          result.data.map(async (center: any) => {
+            let slotsLeft = 0;
+
+            try {
+              const slotsResponse = await fetch(
+                `${API_URL}/api/slots/center/${center.id}`
+              );
+
+              if (slotsResponse.ok) {
+                const slotsResult = await slotsResponse.json();
+
+                if (slotsResult.success && Array.isArray(slotsResult.data)) {
+                  slotsLeft = slotsResult.data.reduce(
+                    (total: number, slot: any) =>
+                      total + Math.max(
+                        Number(slot.capacity) - Number(slot.bookedCount),
+                        0
+                      ),
+                    0
+                  );
+                }
+              }
+            } catch (slotError) {
+              console.error(
+                `Failed to fetch slots for center ${center.id}:`,
+                slotError
+              );
+            }
+
+            return {
+              id: String(center.id),
+              name: center.name,
+              location: `${center.district}, ${center.state}`,
+              distance: '—',
+              waitTime: Number(center.avgServiceMinutes) || 0,
+              slots: slotsLeft,
+              recommended: false,
+            };
+          })
+        );
+
+        if (!isMounted) return;
+
+        // Temporary recommendation rule until the ML service is connected:
+        // prefer the center with the lowest estimated service time,
+        // then the highest available slot capacity.
+        const recommendedIndex = centersWithSlots.reduce(
+          (bestIndex: number, center: Center, index: number, all: Center[]) => {
+            if (bestIndex === -1) return index;
+
+            const best = all[bestIndex];
+
+            if (center.waitTime < best.waitTime) return index;
+            if (
+              center.waitTime === best.waitTime &&
+              center.slots > best.slots
+            ) {
+              return index;
+            }
+
+            return bestIndex;
+          },
+          -1
+        );
+
+        if (recommendedIndex >= 0) {
+          centersWithSlots[recommendedIndex].recommended = true;
+        }
+
+        setCenters(centersWithSlots);
+      } catch (err) {
+        console.error('Fetch centers error:', err);
+
+        if (isMounted) {
+          setError('Unable to load procurement centers');
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchCenters();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredCenters = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -66,7 +156,31 @@ export default function BookSlotScreen() {
         center.name.toLowerCase().includes(query) ||
         center.location.toLowerCase().includes(query)
     );
-  }, [search]);
+  }, [search, centers]);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Ionicons name="refresh-outline" size={32} color="#2F7D4A" />
+        <Text style={styles.loadingText}>
+          Loading procurement centers...
+        </Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <Ionicons
+          name="alert-circle-outline"
+          size={40}
+          color="#C62828"
+        />
+        <Text style={styles.errorText}>{error}</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -360,6 +474,27 @@ export default function BookSlotScreen() {
 }
 
 const styles = StyleSheet.create({
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 30,
+  },
+
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#587064',
+  },
+
+  errorText: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#C62828',
+    textAlign: 'center',
+  },
+
   container: {
     flex: 1,
     backgroundColor: '#F6F8F3',

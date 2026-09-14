@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==============================
+// ENUMS
+// ==============================
+
+enum UserRole {
+  FARMER
+  OPERATOR
+  ADMIN
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum CenterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SlotStatus {
+  AVAILABLE
+  FULL
+  CLOSED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum TokenStatus {
+  WAITING
+  READY
+  SERVING
+  COMPLETED
+  CANCELLED
+}
+
+// ==============================
+// USER / FARMER
+// ==============================
+
+model User {
+  id                 Int                @id @default(autoincrement())
+  farmerId           String             @unique
+  fullName           String
+  mobile             String             @unique
+  passwordHash       String
+  aadhaarLast4       String?
+  role               UserRole           @default(FARMER)
+  verificationStatus VerificationStatus @default(PENDING)
+
+  village            String?
+  district           String?
+  state              String?
+
+  landAreaAcres      Decimal?           @db.Decimal(10, 2)
+  landOwnership      String?
+
+  bankAccountLast4   String?
+  bankIfsc           String?
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  bookings           Booking[]
+}
+
+// ==============================
+// PROCUREMENT CENTER
+// ==============================
+
+model ProcurementCenter {
+  id                 Int                @id @default(autoincrement())
+  name               String
+  address            String
+  village            String?
+  district            String
+  state              String
+
+  latitude           Decimal?           @db.Decimal(10, 7)
+  longitude          Decimal?           @db.Decimal(10, 7)
+
+  status             CenterStatus       @default(ACTIVE)
+
+  activeCounters     Int                @default(1)
+  avgServiceMinutes  Int                @default(18)
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  slots              Slot[]
+}
+
+// ==============================
+// BOOKING SLOT
+// ==============================
+
+model Slot {
+  id                 Int                @id @default(autoincrement())
+  centerId           Int
+  slotDate           DateTime           @db.Date
+  startTime          DateTime
+  endTime            DateTime
+
+  capacity           Int                @default(10)
+  bookedCount        Int                @default(0)
+
+  status             SlotStatus         @default(AVAILABLE)
+
+  center             ProcurementCenter  @relation(fields: [centerId], references: [id])
+  bookings           Booking[]
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([centerId, slotDate, startTime])
+  @@index([centerId, slotDate])
+}
+
+// ==============================
+// BOOKING
+// ==============================
+
+model Booking {
+  id                 Int                @id @default(autoincrement())
+  bookingId          String             @unique
+
+  userId             Int
+  slotId             Int
+
+  commodity          String
+  quantityQuintals   Decimal            @db.Decimal(10, 2)
+
+  status             BookingStatus      @default(CONFIRMED)
+
+  tokenNumber        String?
+  tokenStatus        TokenStatus       @default(WAITING)
+
+  estimatedWaitMin   Int?
+
+  bookedAt           DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user               User               @relation(fields: [userId], references: [id])
+  slot               Slot               @relation(fields: [slotId], references: [id])
+
+  @@index([userId])
+  @@index([slotId])
+  @@index([tokenNumber])
+}
+
+model OtpVerification {
+  id          Int      @id @default(autoincrement())
+  mobile      String
+  otpHash     String
+  expiresAt   DateTime
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([mobile])
+  @@index([expiresAt])
+}

@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,12 +10,44 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
+
+const API_URL = 'http://10.164.217.66:5000';
+
+type Slot = {
+  id: number;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  capacity: number;
+  bookedCount: number;
+  status: string;
+  center: {
+    id: number;
+    name: string;
+    address: string;
+    district: string;
+    state: string;
+    avgServiceMinutes: number;
+  };
+};
 
 export default function ConfirmBookingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
   const params = useLocalSearchParams();
+
+  const centerId =
+    typeof params.centerId === 'string' ? params.centerId : '';
+
+  const slotId =
+    typeof params.slotId === 'string' ? Number(params.slotId) : 0;
+
+  const mode =
+    typeof params.mode === 'string' ? params.mode : 'booking';
+
+  const bookingId =
+    typeof params.bookingId === 'string' ? params.bookingId : '';
 
   const centerName =
     typeof params.centerName === 'string'
@@ -24,12 +57,12 @@ export default function ConfirmBookingScreen() {
   const date =
     typeof params.date === 'string'
       ? params.date
-      : '18';
+      : '';
 
   const time =
     typeof params.time === 'string'
       ? params.time
-      : '10:30 AM';
+      : '';
 
   const crop =
     typeof params.crop === 'string'
@@ -41,9 +74,226 @@ export default function ConfirmBookingScreen() {
       ? params.quantity
       : '30';
 
+  const [slot, setSlot] = useState<Slot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadSlot() {
+      if (!centerId || !slotId) {
+        if (mounted) {
+          setError('Booking details are incomplete.');
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError('');
+
+        const response = await fetch(
+          `${API_URL}/api/slots/center/${centerId}`
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch slot details');
+        }
+
+        const result = await response.json();
+
+        if (!result.success || !Array.isArray(result.data)) {
+          throw new Error(result.message || 'Invalid slot response');
+        }
+
+        const selectedSlot = result.data.find(
+          (item: Slot) => Number(item.id) === slotId
+        );
+
+        if (!selectedSlot) {
+          throw new Error('Selected slot is no longer available');
+        }
+
+        if (mounted) {
+          setSlot(selectedSlot);
+        }
+      } catch (err) {
+        console.error('Load slot error:', err);
+
+        if (mounted) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Unable to load booking details'
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadSlot();
+
+    return () => {
+      mounted = false;
+    };
+  }, [centerId, slotId]);
+
+  const selectedDate =
+    slot?.slotDate
+      ? new Date(`${slot.slotDate.slice(0, 10)}T00:00:00`)
+      : null;
+
+  const formattedDate = selectedDate
+    ? selectedDate.toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
+    : date
+      ? `${date} September 2026`
+      : '—';
+
+  const formattedTime = slot?.startTime
+    ? new Date(slot.startTime).toLocaleTimeString('en-IN', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'UTC',
+      })
+    : time || '—';
+
+  const estimatedWait =
+    slot?.center?.avgServiceMinutes !== undefined
+      ? Number(slot.center.avgServiceMinutes)
+      : 0;
+
+  async function handleConfirmBooking() {
+    if (!slotId) {
+      setError('Please select a valid slot.');
+      return;
+    }
+
+    if (mode === 'reschedule' && !bookingId) {
+      setError('Booking information is missing.');
+      return;
+    }
+
+    if (!crop.trim()) {
+      setError('Commodity is required.');
+      return;
+    }
+
+    const quantityNumber = Number(quantity);
+
+    if (!Number.isFinite(quantityNumber) || quantityNumber <= 0) {
+      setError('Please enter a valid quantity.');
+      return;
+    }
+
+    try {
+      setConfirming(true);
+      setError('');
+
+      const token = await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        setError('Please login again to confirm your booking.');
+        return;
+      }
+
+      const endpoint =
+        mode === 'reschedule'
+          ? `${API_URL}/api/bookings/${bookingId}/reschedule`
+          : `${API_URL}/api/bookings`;
+
+      const response = await fetch(endpoint, {
+        method: mode === 'reschedule' ? 'PATCH' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(
+          mode === 'reschedule'
+            ? { newSlotId: slotId }
+            : {
+                slotId,
+                commodity: crop.trim(),
+                quantityQuintals: quantityNumber,
+              }
+        ),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message || 'Unable to confirm your booking'
+        );
+      }
+
+      const booking = result.data;
+
+      if (mode === 'reschedule') {
+        router.replace({
+          pathname: '/my-booking',
+        });
+        return;
+      }
+
+      router.replace({
+        pathname: '/booking-confirmed',
+        params: {
+          bookingId: booking.bookingId,
+          centerName:
+            booking.slot?.center?.name || centerName,
+          district:
+            booking.slot?.center?.district || '',
+          state:
+            booking.slot?.center?.state || '',
+          date: booking.slot?.slotDate
+            ? booking.slot.slotDate.slice(0, 10)
+            : date,
+          time: booking.slot?.startTime
+            ? new Date(booking.slot.startTime).toLocaleTimeString(
+                'en-IN',
+                {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true,
+                }
+              )
+            : time,
+          crop: booking.commodity || crop,
+          quantity: String(
+            booking.quantityQuintals ?? quantity
+          ),
+          tokenNumber: booking.tokenNumber || '',
+          estimatedWaitMin: String(
+            booking.estimatedWaitMin ?? estimatedWait
+          ),
+        },
+      });
+    } catch (err) {
+      console.error('Confirm booking error:', err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to confirm your booking'
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
-
       {/* ================= HEADER ================= */}
 
       <View
@@ -55,6 +305,7 @@ export default function ConfirmBookingScreen() {
         <Pressable
           style={styles.backButton}
           onPress={() => router.back()}
+          disabled={confirming}
         >
           <Ionicons
             name="arrow-back"
@@ -82,16 +333,13 @@ export default function ConfirmBookingScreen() {
         </View>
       </View>
 
-
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-
         {/* ================= CONFIRMATION MESSAGE ================= */}
 
         <View style={styles.introCard}>
-
           <View style={styles.introIcon}>
             <Ionicons
               name="calendar"
@@ -101,7 +349,6 @@ export default function ConfirmBookingScreen() {
           </View>
 
           <View style={styles.introContent}>
-
             <Text style={styles.introTitle}>
               Almost there!
             </Text>
@@ -110,11 +357,24 @@ export default function ConfirmBookingScreen() {
               Review your procurement appointment
               details before confirming your slot.
             </Text>
-
           </View>
-
         </View>
 
+        {/* ================= ERROR ================= */}
+
+        {error ? (
+          <View style={styles.errorCard}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={19}
+              color="#B42318"
+            />
+
+            <Text style={styles.errorText}>
+              {error}
+            </Text>
+          </View>
+        ) : null}
 
         {/* ================= CENTER ================= */}
 
@@ -123,7 +383,6 @@ export default function ConfirmBookingScreen() {
         </Text>
 
         <View style={styles.centerCard}>
-
           <View style={styles.centerIcon}>
             <Ionicons
               name="business-outline"
@@ -133,13 +392,11 @@ export default function ConfirmBookingScreen() {
           </View>
 
           <View style={styles.centerDetails}>
-
             <Text style={styles.centerName}>
-              {centerName}
+              {slot?.center?.name || centerName}
             </Text>
 
             <View style={styles.locationRow}>
-
               <Ionicons
                 name="location-outline"
                 size={14}
@@ -147,13 +404,13 @@ export default function ConfirmBookingScreen() {
               />
 
               <Text style={styles.locationText}>
-                Muzaffarpur, Bihar
+                {slot?.center?.district
+                  ? `${slot.center.district}, ${slot.center.state}`
+                  : '—'}
               </Text>
-
             </View>
 
             <View style={styles.distanceRow}>
-
               <Ionicons
                 name="navigate-outline"
                 size={13}
@@ -161,15 +418,11 @@ export default function ConfirmBookingScreen() {
               />
 
               <Text style={styles.distanceText}>
-                2.4 km from your location
+                Distance will be calculated from your location
               </Text>
-
             </View>
-
           </View>
-
         </View>
-
 
         {/* ================= APPOINTMENT ================= */}
 
@@ -178,9 +431,7 @@ export default function ConfirmBookingScreen() {
         </Text>
 
         <View style={styles.detailsCard}>
-
           <View style={styles.detailRow}>
-
             <View style={styles.detailIcon}>
               <Ionicons
                 name="calendar-outline"
@@ -195,18 +446,14 @@ export default function ConfirmBookingScreen() {
               </Text>
 
               <Text style={styles.detailValue}>
-                {date} September 2026
+                {loading ? 'Loading...' : formattedDate}
               </Text>
             </View>
-
           </View>
-
 
           <View style={styles.divider} />
 
-
           <View style={styles.detailRow}>
-
             <View
               style={[
                 styles.detailIcon,
@@ -226,18 +473,14 @@ export default function ConfirmBookingScreen() {
               </Text>
 
               <Text style={styles.detailValue}>
-                {time}
+                {loading ? 'Loading...' : formattedTime}
               </Text>
             </View>
-
           </View>
-
 
           <View style={styles.divider} />
 
-
           <View style={styles.detailRow}>
-
             <View style={styles.detailIcon}>
               <Ionicons
                 name="hourglass-outline"
@@ -252,12 +495,13 @@ export default function ConfirmBookingScreen() {
               </Text>
 
               <Text style={styles.detailValue}>
-                25 minutes
+                {loading
+                  ? 'Loading...'
+                  : `${estimatedWait} minutes`}
               </Text>
             </View>
 
             <View style={styles.aiMiniBadge}>
-
               <Ionicons
                 name="sparkles"
                 size={10}
@@ -267,13 +511,9 @@ export default function ConfirmBookingScreen() {
               <Text style={styles.aiMiniText}>
                 AI
               </Text>
-
             </View>
-
           </View>
-
         </View>
-
 
         {/* ================= PROCUREMENT ================= */}
 
@@ -282,9 +522,7 @@ export default function ConfirmBookingScreen() {
         </Text>
 
         <View style={styles.procurementCard}>
-
           <View style={styles.procurementItem}>
-
             <View style={styles.procurementIcon}>
               <Ionicons
                 name="leaf-outline"
@@ -302,12 +540,9 @@ export default function ConfirmBookingScreen() {
                 {crop}
               </Text>
             </View>
-
           </View>
 
-
           <View style={styles.procurementItem}>
-
             <View
               style={[
                 styles.procurementIcon,
@@ -330,16 +565,12 @@ export default function ConfirmBookingScreen() {
                 {quantity} quintals
               </Text>
             </View>
-
           </View>
-
         </View>
-
 
         {/* ================= AI INSIGHT ================= */}
 
         <View style={styles.aiCard}>
-
           <View style={styles.aiIcon}>
             <Ionicons
               name="sparkles"
@@ -349,9 +580,7 @@ export default function ConfirmBookingScreen() {
           </View>
 
           <View style={styles.aiContent}>
-
             <View style={styles.aiTitleRow}>
-
               <Text style={styles.aiTitle}>
                 AI queue insight
               </Text>
@@ -361,24 +590,19 @@ export default function ConfirmBookingScreen() {
                   SMART
                 </Text>
               </View>
-
             </View>
 
             <Text style={styles.aiText}>
-              This slot currently has an estimated
-              waiting time of 25 minutes based on
-              expected queue activity.
+              {loading
+                ? 'Calculating the current expected waiting time...'
+                : `This slot currently has an estimated waiting time of ${estimatedWait} minutes based on center service capacity.`}
             </Text>
-
           </View>
-
         </View>
-
 
         {/* ================= IMPORTANT NOTE ================= */}
 
         <View style={styles.noteCard}>
-
           <Ionicons
             name="information-circle-outline"
             size={19}
@@ -391,62 +615,57 @@ export default function ConfirmBookingScreen() {
             slot. Your final token will be generated
             after confirmation.
           </Text>
-
         </View>
-
 
         {/* ================= CONFIRM BUTTON ================= */}
 
         <Pressable
           style={({ pressed }) => [
             styles.confirmButton,
-            pressed && styles.buttonPressed,
+            (pressed || confirming || loading || !!error) &&
+              styles.buttonPressed,
+            (loading || confirming || !slot) &&
+              styles.disabledButton,
           ]}
-          onPress={() =>
-            router.push({
-              pathname: '/booking-confirmed',
-              params: {
-                centerName,
-                date,
-                time,
-                crop,
-                quantity,
-              },
-            })
-          }
+          onPress={handleConfirmBooking}
+          disabled={loading || confirming || !slot}
         >
-
-          <Ionicons
-            name="checkmark-circle"
-            size={21}
-            color="#FFFFFF"
-          />
+          {confirming ? (
+            <ActivityIndicator
+              size="small"
+              color="#FFFFFF"
+            />
+          ) : (
+            <Ionicons
+              name="checkmark-circle"
+              size={21}
+              color="#FFFFFF"
+            />
+          )}
 
           <Text style={styles.confirmText}>
-            Confirm Booking
+            {confirming
+              ? 'Confirming...'
+              : mode === 'reschedule'
+                ? 'Confirm Reschedule'
+                : 'Confirm Booking'}
           </Text>
-
         </Pressable>
-
 
         <Text style={styles.bottomNote}>
           You can reschedule or cancel this booking
           from My Booking.
         </Text>
-
       </ScrollView>
-
     </View>
   );
 }
-
 
 /* ============================================================
    STYLES
 ============================================================ */
 
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
     backgroundColor: '#F6F8F3',
@@ -502,9 +721,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-
-  /* INTRO */
-
   introCard: {
     backgroundColor: '#EAF4EC',
     borderRadius: 17,
@@ -542,8 +758,25 @@ const styles = StyleSheet.create({
     color: '#66766C',
   },
 
+  errorCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#FDECEC',
+    borderWidth: 1,
+    borderColor: '#F4C7C3',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
 
-  /* SECTIONS */
+  errorText: {
+    flex: 1,
+    fontSize: 9,
+    lineHeight: 14,
+    color: '#B42318',
+    fontWeight: '600',
+  },
 
   sectionTitle: {
     marginTop: 21,
@@ -552,9 +785,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#18352A',
   },
-
-
-  /* CENTER */
 
   centerCard: {
     backgroundColor: '#FFFFFF',
@@ -609,9 +839,6 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: '#89958E',
   },
-
-
-  /* APPOINTMENT */
 
   detailsCard: {
     backgroundColor: '#FFFFFF',
@@ -680,9 +907,6 @@ const styles = StyleSheet.create({
     color: '#8B5A00',
   },
 
-
-  /* PROCUREMENT */
-
   procurementCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 17,
@@ -719,9 +943,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#33463B',
   },
-
-
-  /* AI */
 
   aiCard: {
     marginTop: 17,
@@ -780,9 +1001,6 @@ const styles = StyleSheet.create({
     color: '#68776E',
   },
 
-
-  /* NOTE */
-
   noteCard: {
     marginTop: 13,
     padding: 12,
@@ -799,9 +1017,6 @@ const styles = StyleSheet.create({
     lineHeight: 13,
     color: '#68766E',
   },
-
-
-  /* BUTTON */
 
   confirmButton: {
     height: 52,
@@ -824,11 +1039,14 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
 
+  disabledButton: {
+    opacity: 0.55,
+  },
+
   bottomNote: {
     marginTop: 10,
     textAlign: 'center',
     fontSize: 8,
     color: '#89958E',
   },
-
 });
