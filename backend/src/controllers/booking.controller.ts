@@ -3,6 +3,7 @@ import {
   createBooking,
   getMyUpcomingBooking,
   getMyBookings,
+  getMyToken,
   cancelBooking,
   rescheduleBooking,
 } from '../services/booking.service.js';
@@ -119,6 +120,42 @@ export async function getMyUpcomingBookingController(
     });
   }
 }
+export async function getMyTokenController(
+  req: AuthenticatedRequest,
+  res: Response
+) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const booking = await getMyToken(req.user.userId);
+
+    if (!booking) {
+      return res.status(200).json({
+        success: true,
+        data: null,
+        message: 'No active token found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: booking,
+    });
+  } catch (error) {
+    console.error('Get my token error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch token',
+    });
+  }
+}
+
 
 export async function getMyBookingsController(
   req: AuthenticatedRequest,

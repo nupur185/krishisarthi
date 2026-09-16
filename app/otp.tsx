@@ -53,17 +53,24 @@ export default function OtpScreen() {
 
       const { token, farmer } = data.data;
 
-      // Store authentication token securely.
-      await SecureStore.setItemAsync('authToken', token);
-       
-      // Store farmer information securely.
+      // Store authentication token securely
+      await SecureStore.setItemAsync(
+        'authToken',
+        token
+      );
+
+      // Store logged-in user information securely
       await SecureStore.setItemAsync(
         'farmer',
         JSON.stringify(farmer)
       );
 
       console.log('LOGIN SUCCESS');
+      console.log('Role:', farmer.role);
       console.log('Farmer ID:', farmer.farmerId);
+
+      // Decide where to send the user based on role
+      const isAdmin = farmer.role === 'ADMIN';
 
       Alert.alert(
         'Login successful',
@@ -71,7 +78,13 @@ export default function OtpScreen() {
         [
           {
             text: 'Continue',
-            onPress: () => router.replace('/home'),
+            onPress: () => {
+              if (isAdmin) {
+                router.replace('/operator');
+              } else {
+                router.replace('/home');
+              }
+            },
           },
         ]
       );
@@ -132,7 +145,9 @@ export default function OtpScreen() {
             disabled={loading}
           >
             <Text style={styles.buttonText}>
-              {loading ? 'Verifying...' : 'Verify & Login'}
+              {loading
+                ? 'Verifying...'
+                : 'Verify & Login'}
             </Text>
           </TouchableOpacity>
 
@@ -150,37 +165,45 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F7FAF7',
   },
+
   container: {
     flex: 1,
     paddingHorizontal: 24,
   },
+
   backButton: {
     marginTop: 10,
   },
+
   backText: {
     fontSize: 17,
     color: '#205C2B',
     fontWeight: '600',
   },
+
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   icon: {
     fontSize: 42,
     marginBottom: 20,
   },
+
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: '#18351D',
     marginBottom: 10,
   },
+
   subtitle: {
     fontSize: 15,
     color: '#667067',
   },
+
   mobile: {
     fontSize: 16,
     fontWeight: '700',
@@ -188,6 +211,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 28,
   },
+
   otpInput: {
     width: '100%',
     height: 58,
@@ -199,6 +223,7 @@ const styles = StyleSheet.create({
     letterSpacing: 8,
     color: '#18351D',
   },
+
   button: {
     width: '100%',
     height: 56,
@@ -208,14 +233,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 24,
   },
+
   buttonDisabled: {
     opacity: 0.6,
   },
+
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
+
   expiry: {
     marginTop: 18,
     color: '#7A847C',

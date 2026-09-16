@@ -152,6 +152,72 @@ export async function getMyUpcomingBooking(userId: number) {
   return booking;
 }
 
+// ============================================
+// GET MY TOKEN
+// ============================================
+
+export async function getMyToken(userId: number) {
+  const booking = await prisma.booking.findFirst({
+    where: {
+      userId,
+      status: 'CONFIRMED',
+      tokenStatus: {
+        in: ['WAITING', 'SERVING'],
+      },
+      slot: {
+        startTime: {
+          gte: new Date(),
+        },
+      },
+    },
+    orderBy: {
+      slot: {
+        startTime: 'asc',
+      },
+    },
+    include: {
+      slot: {
+        include: {
+          center: true,
+        },
+      },
+    },
+  });
+
+  if (!booking) {
+    return null;
+  }
+
+  return {
+    id: booking.id,
+    bookingId: booking.bookingId,
+    tokenNumber: booking.tokenNumber,
+    tokenStatus: booking.tokenStatus,
+    status: booking.status,
+    commodity: booking.commodity,
+    quantityQuintals: booking.quantityQuintals,
+    estimatedWaitMin: booking.estimatedWaitMin,
+
+    center: {
+      id: booking.slot.center.id,
+      name: booking.slot.center.name,
+      address: booking.slot.center.address,
+      village: booking.slot.center.village,
+      district: booking.slot.center.district,
+      state: booking.slot.center.state,
+    },
+
+    slot: {
+      id: booking.slot.id,
+      slotDate: booking.slot.slotDate,
+      startTime: booking.slot.startTime,
+      endTime: booking.slot.endTime,
+    },
+
+    bookedAt: booking.bookedAt,
+  };
+}
+
 export async function getMyBookings(userId: number) {
   return prisma.booking.findMany({
     where: {
@@ -248,10 +314,10 @@ export async function rescheduleBooking(
         bookingId,
         userId,
       },
-        include: {
-          slot: true,
-        },
-      });
+      include: {
+        slot: true,
+      },
+    });
 
     if (!booking) {
       throw new Error('Booking not found');

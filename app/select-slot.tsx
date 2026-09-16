@@ -168,7 +168,7 @@ export default function SelectSlotScreen() {
     }
 
     fetchSlots();
-  }, [centerId, isReschedule, currentSlotId]);
+  }, [centerId, mode, currentSlotId]);
 
   const dates = useMemo<DisplayDate[]>(() => {
     const uniqueDates = Array.from(

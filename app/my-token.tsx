@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -7,33 +8,334 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
+
+const API_URL = 'http://10.164.217.66:5000';
+
+interface TokenCenter {
+  id: number;
+  name: string;
+  address: string;
+  village: string | null;
+  district: string;
+  state: string;
+}
+
+interface TokenSlot {
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+
+  // Current API may return centre information in different shapes.
+  center?: TokenCenter;
+
+  // Possible flattened centre fields.
+  centerId?: number;
+  centerName?: string;
+  centerAddress?: string;
+  centerVillage?: string | null;
+  centerDistrict?: string;
+  centerState?: string;
+}
+
+interface TokenBooking {
+  id: number;
+  bookingId: string;
+  commodity: string;
+  quantityQuintals: number | string;
+  status: string;
+  tokenNumber: string | null;
+  tokenStatus:
+    | 'WAITING'
+    | 'READY'
+    | 'SERVING'
+    | 'COMPLETED'
+    | 'CANCELLED';
+  estimatedWaitMin: number | null;
+
+  slot: TokenSlot;
+
+  // Possible flattened centre information from API.
+  center?: TokenCenter;
+  centerId?: number;
+  centerName?: string;
+  centerAddress?: string;
+  centerVillage?: string | null;
+  centerDistrict?: string;
+  centerState?: string;
+}
 
 export default function MyTokenScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const {
-    centerName = 'Green Valley Center',
-    date = '18 Sep 2026',
-    time = '10:30 AM',
-    crop = 'Wheat',
-    quantity = '32',
-    bookingId = 'KS-260918-0142',
-    tokenNumber = 'A-76',
-  } = useLocalSearchParams<{
-    centerName?: string;
-    date?: string;
-    time?: string;
-    crop?: string;
-    quantity?: string;
-    bookingId?: string;
-    tokenNumber?: string;
-  }>();
+  const [booking, setBooking] =
+    useState<TokenBooking | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
+
+  useEffect(() => {
+    fetchMyToken();
+  }, []);
+
+  async function fetchMyToken() {
+    try {
+      setLoading(true);
+      setError('');
+
+      const token =
+        await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        throw new Error(
+          'Authentication token not found'
+        );
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/bookings/my-token`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message ||
+            'Failed to fetch token'
+        );
+      }
+
+      /*
+       * ------------------------------------------------
+       * Normalize the API response
+       * ------------------------------------------------
+       *
+       * The screen expects:
+       *
+       * booking.slot.center
+       *
+       * But the current backend response may provide
+       * centre information at another level.
+       *
+       * We normalize it here so the rest of the UI
+       * can safely use booking.slot.center.
+       */
+
+      const rawBooking = result.data;
+
+      if (!rawBooking) {
+        setBooking(null);
+        return;
+      }
+
+      const rawSlot = rawBooking.slot ?? {};
+
+      const rawCenter =
+        rawSlot.center ??
+        rawBooking.center ??
+        null;
+
+      const normalizedCenter: TokenCenter = {
+        id:
+          rawCenter?.id ??
+          rawSlot.centerId ??
+          rawBooking.centerId ??
+          0,
+
+        name:
+          rawCenter?.name ??
+          rawSlot.centerName ??
+          rawBooking.centerName ??
+          'Procurement Centre',
+
+        address:
+          rawCenter?.address ??
+          rawSlot.centerAddress ??
+          rawBooking.centerAddress ??
+          '',
+
+        village:
+          rawCenter?.village ??
+          rawSlot.centerVillage ??
+          rawBooking.centerVillage ??
+          null,
+
+        district:
+          rawCenter?.district ??
+          rawSlot.centerDistrict ??
+          rawBooking.centerDistrict ??
+          '',
+
+        state:
+          rawCenter?.state ??
+          rawSlot.centerState ??
+          rawBooking.centerState ??
+          '',
+      };
+
+      const normalizedBooking: TokenBooking = {
+        ...rawBooking,
+
+        slot: {
+          ...rawSlot,
+          center: normalizedCenter,
+        },
+      };
+
+      setBooking(normalizedBooking);
+    } catch (fetchError) {
+      console.error(
+        'Fetch token error:',
+        fetchError
+      );
+
+      setError(
+        fetchError instanceof Error
+          ? fetchError.message
+          : 'Unable to load your token.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function formatDate(value: string) {
+    return new Date(value).toLocaleDateString(
+      'en-US',
+      {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }
+    );
+  }
+
+  function formatTime(value: string) {
+    return new Date(value).toLocaleTimeString(
+      'en-US',
+      {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'UTC',
+      }
+    );
+  }
+
+  function getStatusLabel(
+    status: TokenBooking['tokenStatus']
+  ) {
+    switch (status) {
+      case 'WAITING':
+        return 'TOKEN BOOKED';
+
+      case 'READY':
+        return 'TOKEN READY';
+
+      case 'SERVING':
+        return 'NOW SERVING';
+
+      case 'COMPLETED':
+        return 'COMPLETED';
+
+      case 'CANCELLED':
+        return 'CANCELLED';
+
+      default:
+        return 'TOKEN BOOKED';
+    }
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.centeredState}>
+        <ActivityIndicator
+          size="large"
+          color="#2F7D4A"
+        />
+
+        <Text style={styles.stateText}>
+          Loading your token...
+        </Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.centeredState}>
+        <Ionicons
+          name="alert-circle-outline"
+          size={48}
+          color="#C94A4A"
+        />
+
+        <Text style={styles.stateTitle}>
+          Unable to load token
+        </Text>
+
+        <Text style={styles.stateText}>
+          {error}
+        </Text>
+
+        <Pressable
+          style={styles.retryButton}
+          onPress={fetchMyToken}
+        >
+          <Text style={styles.retryButtonText}>
+            Try Again
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <View style={styles.centeredState}>
+        <Ionicons
+          name="ticket-outline"
+          size={48}
+          color="#7A857D"
+        />
+
+        <Text style={styles.stateTitle}>
+          No Active Token
+        </Text>
+
+        <Text style={styles.stateText}>
+          You don't have an active procurement token.
+        </Text>
+
+        <Pressable
+          style={styles.retryButton}
+          onPress={() =>
+            router.replace('/book-slot')
+          }
+        >
+          <Text style={styles.retryButtonText}>
+            Book a Slot
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
+
       {/* Header */}
       <View
         style={[
@@ -52,7 +354,9 @@ export default function MyTokenScreen() {
           />
         </Pressable>
 
-        <Text style={styles.headerTitle}>My Token</Text>
+        <Text style={styles.headerTitle}>
+          My Token
+        </Text>
 
         <Pressable style={styles.headerButton}>
           <Ionicons
@@ -67,15 +371,21 @@ export default function MyTokenScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 30 },
+          {
+            paddingBottom:
+              insets.bottom + 30,
+          },
         ]}
       >
+
         {/* Status */}
         <View style={styles.statusContainer}>
           <View style={styles.statusDot} />
 
           <Text style={styles.statusText}>
-            TOKEN READY
+            {getStatusLabel(
+              booking.tokenStatus
+            )}
           </Text>
         </View>
 
@@ -86,7 +396,7 @@ export default function MyTokenScreen() {
           </Text>
 
           <Text style={styles.tokenNumber}>
-            {tokenNumber}
+            {booking.tokenNumber ?? '—'}
           </Text>
 
           <Text style={styles.tokenInstruction}>
@@ -108,6 +418,7 @@ export default function MyTokenScreen() {
 
           {/* Date / Time */}
           <View style={styles.dateTimeRow}>
+
             <View style={styles.dateTimeItem}>
               <View style={styles.iconCircle}>
                 <Ionicons
@@ -118,9 +429,14 @@ export default function MyTokenScreen() {
               </View>
 
               <View>
-                <Text style={styles.infoLabel}>DATE</Text>
+                <Text style={styles.infoLabel}>
+                  DATE
+                </Text>
+
                 <Text style={styles.infoValue}>
-                  {date}
+                  {formatDate(
+                    booking.slot.slotDate
+                  )}
                 </Text>
               </View>
             </View>
@@ -137,12 +453,18 @@ export default function MyTokenScreen() {
               </View>
 
               <View>
-                <Text style={styles.infoLabel}>TIME</Text>
+                <Text style={styles.infoLabel}>
+                  TIME
+                </Text>
+
                 <Text style={styles.infoValue}>
-                  {time}
+                  {formatTime(
+                    booking.slot.startTime
+                  )}
                 </Text>
               </View>
             </View>
+
           </View>
         </View>
 
@@ -153,6 +475,7 @@ export default function MyTokenScreen() {
           </Text>
 
           <View style={styles.centerCard}>
+
             <View style={styles.centerIcon}>
               <Ionicons
                 name="business-outline"
@@ -162,8 +485,9 @@ export default function MyTokenScreen() {
             </View>
 
             <View style={styles.centerContent}>
+
               <Text style={styles.centerName}>
-                {centerName}
+                {booking.slot.center?.name}
               </Text>
 
               <View style={styles.locationRow}>
@@ -174,9 +498,15 @@ export default function MyTokenScreen() {
                 />
 
                 <Text style={styles.locationText}>
-                  Muzaffarpur, Bihar
+                  {booking.slot.center?.district}
+                  {booking.slot.center?.district &&
+                  booking.slot.center.state
+                    ? ', '
+                    : ''}
+                  {booking.slot.center?.state}
                 </Text>
               </View>
+
             </View>
 
             <Ionicons
@@ -184,6 +514,7 @@ export default function MyTokenScreen() {
               size={20}
               color="#9AA49D"
             />
+
           </View>
         </View>
 
@@ -194,6 +525,7 @@ export default function MyTokenScreen() {
           </Text>
 
           <View style={styles.detailsCard}>
+
             <View style={styles.detailItem}>
               <Text style={styles.detailLabel}>
                 COMMODITY
@@ -207,7 +539,7 @@ export default function MyTokenScreen() {
                 />
 
                 <Text style={styles.detailValue}>
-                  {crop}
+                  {booking.commodity}
                 </Text>
               </View>
             </View>
@@ -225,15 +557,17 @@ export default function MyTokenScreen() {
                 />
 
                 <Text style={styles.detailValue}>
-                  {quantity} quintals
+                  {booking.quantityQuintals} quintals
                 </Text>
               </View>
             </View>
+
           </View>
         </View>
 
         {/* AI Queue Insight */}
         <View style={styles.aiCard}>
+
           <View style={styles.aiIcon}>
             <Ionicons
               name="sparkles"
@@ -243,6 +577,7 @@ export default function MyTokenScreen() {
           </View>
 
           <View style={styles.aiContent}>
+
             <View style={styles.aiTitleRow}>
               <Text style={styles.aiTitle}>
                 AI Queue Insight
@@ -258,29 +593,33 @@ export default function MyTokenScreen() {
             <Text style={styles.aiText}>
               Expected waiting time is around{' '}
               <Text style={styles.aiBold}>
-                25 minutes
+                {booking.estimatedWaitMin ?? '—'} minutes
               </Text>{' '}
               based on current centre activity.
             </Text>
+
           </View>
         </View>
 
         {/* Booking ID */}
         <View style={styles.bookingIdRow}>
+
           <Text style={styles.bookingIdLabel}>
             Booking ID
           </Text>
 
           <Text style={styles.bookingIdValue}>
-            {bookingId}
+            {booking.bookingId}
           </Text>
+
         </View>
 
         {/* Actions */}
         <Pressable
           style={({ pressed }) => [
             styles.primaryButton,
-            pressed && styles.buttonPressed,
+            pressed &&
+              styles.buttonPressed,
           ]}
           onPress={() => {}}
         >
@@ -298,9 +637,12 @@ export default function MyTokenScreen() {
         <Pressable
           style={({ pressed }) => [
             styles.secondaryButton,
-            pressed && styles.secondaryPressed,
+            pressed &&
+              styles.secondaryPressed,
           ]}
-          onPress={() => router.replace('/')}
+          onPress={() =>
+            router.replace('/')
+          }
         >
           <Ionicons
             name="home-outline"
@@ -315,6 +657,7 @@ export default function MyTokenScreen() {
 
         {/* Reminder */}
         <View style={styles.reminder}>
+
           <Ionicons
             name="notifications-outline"
             size={17}
@@ -324,7 +667,9 @@ export default function MyTokenScreen() {
           <Text style={styles.reminderText}>
             We’ll notify you when your token is approaching.
           </Text>
+
         </View>
+
       </ScrollView>
     </View>
   );
@@ -361,19 +706,32 @@ function QRPattern() {
 
   return (
     <View style={styles.qrPattern}>
-      {pattern.map((row, rowIndex) => (
-        <View key={rowIndex} style={styles.qrRow}>
-          {row.split('').map((cell, cellIndex) => (
-            <View
-              key={cellIndex}
-              style={[
-                styles.qrCell,
-                cell === '1' && styles.qrCellFilled,
-              ]}
-            />
-          ))}
-        </View>
-      ))}
+      {pattern.map(
+        (row, rowIndex) => (
+          <View
+            key={rowIndex}
+            style={styles.qrRow}
+          >
+            {row
+              .split('')
+              .map(
+                (
+                  cell,
+                  cellIndex
+                ) => (
+                  <View
+                    key={cellIndex}
+                    style={[
+                      styles.qrCell,
+                      cell === '1' &&
+                        styles.qrCellFilled,
+                    ]}
+                  />
+                )
+              )}
+          </View>
+        )
+      )}
     </View>
   );
 }
@@ -638,7 +996,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
 
-
   detailItem: {
     flex: 1,
     paddingVertical: 14,
@@ -769,7 +1126,11 @@ const styles = StyleSheet.create({
 
   buttonPressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.99 }],
+    transform: [
+      {
+        scale: 0.99,
+      },
+    ],
   },
 
   secondaryButton: {
@@ -809,5 +1170,45 @@ const styles = StyleSheet.create({
     color: '#78837B',
     marginLeft: 6,
     textAlign: 'center',
+  },
+
+  /* States */
+
+  centeredState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    backgroundColor: '#F7FAF7',
+  },
+
+  stateTitle: {
+    marginTop: 14,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#26332A',
+    textAlign: 'center',
+  },
+
+  stateText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#7A857D',
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+
+  retryButton: {
+    marginTop: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#2F7D4A',
+  },
+
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

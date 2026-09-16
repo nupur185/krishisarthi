@@ -48,6 +48,42 @@ enum TokenStatus {
   CANCELLED
 }
 
+enum QueueStage {
+  TOKEN_QUEUE
+  QUALITY_CHECK
+  WEIGHTMENT
+  FINALIZATION
+  COMPLETED
+}
+
+enum ProcurementStatus {
+  NOT_STARTED
+  QUALITY_CHECK
+  WEIGHTMENT
+  FINALIZATION
+  COMPLETED
+  REJECTED
+}
+
+enum QualityGrade {
+  A
+  B
+  C
+  REJECTED
+}
+
+// ==============================
+// PAYMENT STATUS
+// ==============================
+
+enum PaymentStatus {
+  NOT_STARTED
+  PROCESSING
+  INITIATED
+  CREDITED
+  FAILED
+}
+
 // ==============================
 // USER / FARMER
 // ==============================
@@ -62,20 +98,20 @@ model User {
   role               UserRole           @default(FARMER)
   verificationStatus VerificationStatus @default(PENDING)
 
-  village            String?
-  district           String?
-  state              String?
+  village  String?
+  district String?
+  state    String?
 
-  landAreaAcres      Decimal?           @db.Decimal(10, 2)
-  landOwnership      String?
+  landAreaAcres Decimal? @db.Decimal(10, 2)
+  landOwnership String?
 
-  bankAccountLast4   String?
-  bankIfsc           String?
+  bankAccountLast4 String?
+  bankIfsc         String?
 
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  bookings           Booking[]
+  bookings Booking[]
 }
 
 // ==============================
@@ -83,25 +119,26 @@ model User {
 // ==============================
 
 model ProcurementCenter {
-  id                 Int                @id @default(autoincrement())
-  name               String
-  address            String
-  village            String?
-  district            String
-  state              String
+  id       Int     @id @default(autoincrement())
+  name     String
+  address  String
+  village  String?
+  district String
+  state    String
 
-  latitude           Decimal?           @db.Decimal(10, 7)
-  longitude          Decimal?           @db.Decimal(10, 7)
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
 
-  status             CenterStatus       @default(ACTIVE)
+  status CenterStatus @default(ACTIVE)
 
-  activeCounters     Int                @default(1)
-  avgServiceMinutes  Int                @default(18)
+  activeCounters    Int @default(1)
+  avgServiceMinutes Int @default(18)
 
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  slots              Slot[]
+  slots      Slot[]
+  queueState QueueState?
 }
 
 // ==============================
@@ -109,22 +146,22 @@ model ProcurementCenter {
 // ==============================
 
 model Slot {
-  id                 Int                @id @default(autoincrement())
-  centerId           Int
-  slotDate           DateTime           @db.Date
-  startTime          DateTime
-  endTime            DateTime
+  id        Int      @id @default(autoincrement())
+  centerId  Int
+  slotDate  DateTime @db.Date
+  startTime DateTime
+  endTime   DateTime
 
-  capacity           Int                @default(10)
-  bookedCount        Int                @default(0)
+  capacity    Int @default(10)
+  bookedCount Int @default(0)
 
-  status             SlotStatus         @default(AVAILABLE)
+  status SlotStatus @default(AVAILABLE)
 
-  center             ProcurementCenter  @relation(fields: [centerId], references: [id])
-  bookings           Booking[]
+  center   ProcurementCenter @relation(fields: [centerId], references: [id])
+  bookings Booking[]
 
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([centerId, slotDate, startTime])
   @@index([centerId, slotDate])
@@ -135,41 +172,155 @@ model Slot {
 // ==============================
 
 model Booking {
-  id                 Int                @id @default(autoincrement())
-  bookingId          String             @unique
+  id        Int    @id @default(autoincrement())
+  bookingId String @unique
 
-  userId             Int
-  slotId             Int
+  userId Int
+  slotId Int
 
-  commodity          String
-  quantityQuintals   Decimal            @db.Decimal(10, 2)
+  commodity        String
+  quantityQuintals Decimal @db.Decimal(10, 2)
 
-  status             BookingStatus      @default(CONFIRMED)
+  status BookingStatus @default(CONFIRMED)
 
-  tokenNumber        String?
-  tokenStatus        TokenStatus       @default(WAITING)
+  tokenNumber String?
+  tokenStatus TokenStatus @default(WAITING)
 
-  estimatedWaitMin   Int?
+  estimatedWaitMin Int?
 
-  bookedAt           DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  bookedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user               User               @relation(fields: [userId], references: [id])
-  slot               Slot               @relation(fields: [slotId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+  slot Slot @relation(fields: [slotId], references: [id])
+
+  // One booking can have one procurement record.
+  // Optional because procurement starts only when
+  // the farmer reaches the procurement stage.
+  procurement ProcurementRecord?
 
   @@index([userId])
   @@index([slotId])
   @@index([tokenNumber])
 }
 
+// ==============================
+// OTP VERIFICATION
+// ==============================
+
 model OtpVerification {
-  id          Int      @id @default(autoincrement())
-  mobile      String
-  otpHash     String
-  expiresAt   DateTime
-  verified    Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  mobile    String
+  otpHash   String
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   @@index([mobile])
   @@index([expiresAt])
+}
+
+// ==============================
+// QUEUE STATE
+// ==============================
+
+model QueueState {
+  id                 Int        @id @default(autoincrement())
+  centerId           Int        @unique
+  currentTokenNumber String?
+  currentStage       QueueStage @default(TOKEN_QUEUE)
+  activeCounters     Int        @default(0)
+  totalServedToday   Int        @default(0)
+  totalProcuredToday Float      @default(0)
+  updatedAt          DateTime   @updatedAt
+
+  center ProcurementCenter @relation(fields: [centerId], references: [id])
+
+  @@map("queue_states")
+}
+
+// ==============================
+// PROCUREMENT RECORD
+// ==============================
+
+model ProcurementRecord {
+  id Int @id @default(autoincrement())
+
+  // One procurement record belongs to one booking.
+  bookingId Int @unique
+
+  // ------------------------------
+  // QUALITY CHECK
+  // ------------------------------
+
+  moisturePercent      Decimal? @db.Decimal(5, 2)
+  foreignMatterPercent Decimal? @db.Decimal(5, 2)
+  damagedGrainsPercent Decimal? @db.Decimal(5, 2)
+
+  qualityGrade QualityGrade?
+
+  // ------------------------------
+  // WEIGHTMENT
+  // ------------------------------
+
+  grossWeightQuintals Decimal? @db.Decimal(10, 2)
+  tareWeightQuintals  Decimal? @db.Decimal(10, 2)
+  netWeightQuintals   Decimal? @db.Decimal(10, 2)
+
+  // ------------------------------
+  // FINALIZATION
+  // ------------------------------
+
+  acceptedQuantityQuintals Decimal? @db.Decimal(10, 2)
+  mspPerQuintal            Decimal? @db.Decimal(10, 2)
+  procurementAmount        Decimal? @db.Decimal(12, 2)
+
+  // ------------------------------
+  // PROCUREMENT STATUS
+  // ------------------------------
+
+  status ProcurementStatus @default(NOT_STARTED)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  // One procurement can have one payment record.
+  // Payment is created when procurement is completed.
+  payment PaymentRecord?
+
+  @@index([status])
+}
+
+// ==============================
+// PAYMENT RECORD
+// ==============================
+
+model PaymentRecord {
+  id Int @id @default(autoincrement())
+
+  // One payment belongs to one procurement.
+  procurementId Int @unique
+
+  // Amount payable to the farmer.
+  amount Decimal @db.Decimal(12, 2)
+
+  // Current payment lifecycle status.
+  status PaymentStatus @default(NOT_STARTED)
+
+  // Bank/payment transaction reference.
+  // Nullable until payment is initiated.
+  bankReference String?
+
+  initiatedAt DateTime?
+  creditedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  procurement ProcurementRecord @relation(fields: [procurementId], references: [id])
+
+  @@index([status])
 }

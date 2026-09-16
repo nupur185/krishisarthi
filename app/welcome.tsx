@@ -1,4 +1,3 @@
-
 import {
   SafeAreaView,
   ScrollView,
@@ -36,13 +35,17 @@ export default function WelcomeScreen() {
         <View style={styles.heroCard}>
           <View style={styles.heroBadge}>
             <View style={styles.badgeDot} />
-            <Text style={styles.heroBadgeText}>BUILT FOR FARMERS</Text>
+            <Text style={styles.heroBadgeText}>
+              BUILT FOR FARMERS
+            </Text>
           </View>
 
           <Text style={styles.title}>
             From Farm to Fair Market,
             {'\n'}
-            <Text style={styles.titleAccent}>without the Wait</Text>
+            <Text style={styles.titleAccent}>
+              without the Wait
+            </Text>
           </Text>
 
           <Text style={styles.subtitle}>
@@ -74,7 +77,10 @@ export default function WelcomeScreen() {
 
         {/* Features */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Everything in one place</Text>
+          <Text style={styles.sectionTitle}>
+            Everything in one place
+          </Text>
+
           <Text style={styles.sectionSubtitle}>
             Simple tools for a smoother procurement experience
           </Text>
@@ -105,22 +111,45 @@ export default function WelcomeScreen() {
 
         {/* Actions */}
         <View style={styles.actions}>
+          {/* Farmer Registration */}
           <TouchableOpacity
             style={styles.primaryButton}
             activeOpacity={0.85}
             onPress={() => router.push('/register')}
           >
-            <Text style={styles.primaryButtonText}>Register as Farmer</Text>
-            <Text style={styles.primaryButtonArrow}>→</Text>
+            <Text style={styles.primaryButtonText}>
+              Register as Farmer
+            </Text>
+
+            <Text style={styles.primaryButtonArrow}>
+              →
+            </Text>
           </TouchableOpacity>
 
+          {/* Farmer Login */}
           <TouchableOpacity
             style={styles.secondaryButton}
             activeOpacity={0.7}
             onPress={() => router.push('/login')}
           >
             <Text style={styles.secondaryButtonText}>
-              Already registered? <Text style={styles.loginAccent}>Login</Text>
+              Already registered?{' '}
+              <Text style={styles.loginAccent}>
+                Login
+              </Text>
+            </Text>
+          </TouchableOpacity>
+
+          {/* Operator Login */}
+          <TouchableOpacity
+            style={styles.operatorButton}
+            activeOpacity={0.7}
+            onPress={() => router.push('/login')}
+          >
+            <Text style={styles.operatorIcon}>⚙</Text>
+
+            <Text style={styles.operatorText}>
+              Operator Login
             </Text>
           </TouchableOpacity>
         </View>
@@ -128,7 +157,11 @@ export default function WelcomeScreen() {
         {/* Footer */}
         <View style={styles.footerRow}>
           <View style={styles.footerDot} />
-          <Text style={styles.footer}>Secure • Simple • Transparent</Text>
+
+          <Text style={styles.footer}>
+            Secure • Simple • Transparent
+          </Text>
+
           <View style={styles.footerDot} />
         </View>
       </ScrollView>
@@ -150,16 +183,25 @@ function Feature({
   return (
     <View style={styles.feature}>
       <View style={styles.featureIcon}>
-        <Text style={styles.featureIconText}>{icon}</Text>
+        <Text style={styles.featureIconText}>
+          {icon}
+        </Text>
       </View>
 
       <View style={styles.featureText}>
         <View style={styles.featureTitleRow}>
-          <Text style={styles.featureTitle}>{title}</Text>
-          <Text style={styles.featureNumber}>{number}</Text>
+          <Text style={styles.featureTitle}>
+            {title}
+          </Text>
+
+          <Text style={styles.featureNumber}>
+            {number}
+          </Text>
         </View>
 
-        <Text style={styles.featureDescription}>{text}</Text>
+        <Text style={styles.featureDescription}>
+          {text}
+        </Text>
       </View>
     </View>
   );
@@ -450,6 +492,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  /* Operator Login */
+
+  operatorButton: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+
+  operatorIcon: {
+    fontSize: 13,
+    color: '#7A847C',
+    marginRight: 6,
+  },
+
+  operatorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#68756B',
+  },
+
   /* Footer */
 
   footerRow: {
@@ -474,4 +540,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

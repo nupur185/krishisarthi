@@ -106,7 +106,7 @@ export default function MyBookingScreen() {
             'Failed to fetch bookings'
         );
       }
-
+console.log('MY BOOKINGS:', JSON.stringify(result.data, null, 2));
       setBookings(result.data || []);
     } catch (fetchError) {
       console.error(

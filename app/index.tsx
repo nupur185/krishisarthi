@@ -1,21 +1,72 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import {
+  ActivityIndicator,
+  View,
+} from 'react-native';
 import { Redirect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
+type Farmer = {
+  farmerId: string;
+  fullName: string;
+  role: 'FARMER' | 'ADMIN';
+};
+
 export default function Index() {
   const [isChecking, setIsChecking] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  const [redirectPath, setRedirectPath] = useState<
+    '/home' | '/operator' | '/welcome'
+  >('/welcome');
 
   useEffect(() => {
     async function checkAuth() {
       try {
-        const token = await SecureStore.getItemAsync('authToken');
+        // Get stored authentication token
+        const token =
+          await SecureStore.getItemAsync(
+            'authToken'
+          );
 
-        setIsLoggedIn(!!token);
+        // Get stored user information
+        const farmerData =
+          await SecureStore.getItemAsync(
+            'farmer'
+          );
+
+        // No login information
+        if (!token) {
+          setRedirectPath('/welcome');
+          return;
+        }
+
+        // Token exists and user information exists
+        if (farmerData) {
+          const farmer: Farmer =
+            JSON.parse(farmerData);
+
+          // ADMIN → Operator Dashboard
+          if (farmer.role === 'ADMIN') {
+            setRedirectPath('/operator');
+          }
+
+          // FARMER → Farmer Home
+          else {
+            setRedirectPath('/home');
+          }
+        }
+
+        // Token exists but user information is missing
+        else {
+          setRedirectPath('/welcome');
+        }
       } catch (error) {
-        console.error('Auth check failed:', error);
-        setIsLoggedIn(false);
+        console.error(
+          'Auth check failed:',
+          error
+        );
+
+        setRedirectPath('/welcome');
       } finally {
         setIsChecking(false);
       }
@@ -24,6 +75,7 @@ export default function Index() {
     checkAuth();
   }, []);
 
+  // Show loading screen while checking authentication
   if (isChecking) {
     return (
       <View
@@ -42,9 +94,8 @@ export default function Index() {
     );
   }
 
-  if (isLoggedIn) {
-    return <Redirect href="/home" />;
-  }
-
-  return <Redirect href="/welcome" />;
+  // Redirect according to user's role
+  return (
+    <Redirect href={redirectPath} />
+  );
 }

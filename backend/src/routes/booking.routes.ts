@@ -4,6 +4,7 @@ import {
   createBookingController,
   getMyUpcomingBookingController,
   getMyBookingsController,
+  getMyTokenController,
    cancelBookingController,
    rescheduleBookingController,
 } from '../controllers/booking.controller.js';
@@ -22,6 +23,12 @@ router.get(
   '/my-upcoming',
   authenticate,
   getMyUpcomingBookingController
+);
+
+router.get(
+  '/my-token',
+  authenticate,
+  getMyTokenController
 );
 
 router.get(

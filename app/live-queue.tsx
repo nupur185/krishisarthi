@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,982 +11,2044 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
 
-export default function LiveQueueScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
+const API_BASE_URL = 'http://10.164.217.66:5000/api';
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
-        </Pressable>
-
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Live Queue</Text>
-          <Text style={styles.headerSubtitle}>
-            Green Valley Center
-          </Text>
-        </View>
-
-        <View style={styles.liveIndicator}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>LIVE</Text>
-        </View>
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Token Card */}
-        <View style={styles.tokenCard}>
-          <View style={styles.tokenTopRow}>
-            <View>
-              <Text style={styles.smallLabel}>YOUR TOKEN</Text>
-              <Text style={styles.tokenNumber}>A-76</Text>
-            </View>
-
-            <View style={styles.tokenStatus}>
-              <Ionicons
-                name="radio-outline"
-                size={15}
-                color="#2F7D4A"
-              />
-              <Text style={styles.tokenStatusText}>In Queue</Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.queueRow}>
-            <View style={styles.queueItem}>
-              <Text style={styles.queueLabel}>NOW SERVING</Text>
-              <Text style={styles.queueValue}>A-70</Text>
-            </View>
-
-            <View style={styles.verticalDivider} />
-
-            <View style={styles.queueItem}>
-              <Text style={styles.queueLabel}>AHEAD OF YOU</Text>
-              <Text style={styles.queueValue}>5</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* AI Prediction */}
-        <View style={styles.aiCard}>
-          <View style={styles.aiIcon}>
-            <Ionicons
-              name="sparkles"
-              size={20}
-              color="#D99A27"
-            />
-          </View>
-
-          <View style={styles.aiContent}>
-            <View style={styles.aiTitleRow}>
-              <Text style={styles.aiTitle}>AI Queue Prediction</Text>
-              <View style={styles.aiBadge}>
-                <Text style={styles.aiBadgeText}>AI</Text>
-              </View>
-            </View>
-
-            <Text style={styles.aiMainText}>
-              Your turn is expected in approximately
-              <Text style={styles.aiTime}> 18 minutes</Text>.
-            </Text>
-
-            <Text style={styles.aiSubText}>
-              Based on current queue movement, active counters
-              and average processing time.
-            </Text>
-          </View>
-        </View>
-
-        {/* Progress */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Queue Progress</Text>
-          <Text style={styles.updatedText}>Updated just now</Text>
-        </View>
-
-        <View style={styles.progressCard}>
-          <View style={styles.progressHeader}>
-            <Text style={styles.progressLeft}>A-70</Text>
-            <Text style={styles.progressRight}>A-76</Text>
-          </View>
-
-          <View style={styles.progressTrack}>
-            <View style={styles.progressFill} />
-            <View style={styles.progressMarker}>
-              <View style={styles.markerDot} />
-            </View>
-          </View>
-
-          <View style={styles.progressLabels}>
-            <Text style={styles.progressText}>
-              Now serving
-            </Text>
-            <Text style={styles.progressText}>
-              Your token
-            </Text>
-          </View>
-        </View>
-
-        {/* Current Stage */}
-        <Text style={styles.sectionTitle}>Procurement Progress</Text>
-
-        <View style={styles.stageCard}>
-          <StageItem
-            icon="checkmark-circle"
-            title="Token Queue"
-            subtitle="Waiting for your turn"
-            status="completed"
-          />
-
-          <View style={styles.stageLine} />
-
-          <StageItem
-            icon="water-outline"
-            title="Quality Check"
-            subtitle="Next step at Counter 3"
-            status="current"
-          />
-
-          <View style={styles.stageLine} />
-
-          <StageItem
-            icon="scale-outline"
-            title="Weightment"
-            subtitle="After quality approval"
-            status="pending"
-          />
-
-          <View style={styles.stageLine} />
-
-          <StageItem
-            icon="document-text-outline"
-            title="Finalization"
-            subtitle="Receipt & procurement completion"
-            status="pending"
-          />
-        </View>
-
-        {/* Live Center Data */}
-        <Text style={styles.sectionTitle}>Live Center Status</Text>
-
-        <View style={styles.statsGrid}>
-          <StatCard
-            icon="people-outline"
-            value="12"
-            label="Farmers in queue"
-          />
-
-          <StatCard
-            icon="people-circle-outline"
-            value="3"
-            label="Active counters"
-          />
-
-          <StatCard
-            icon="time-outline"
-            value="18 min"
-            label="Avg. processing"
-          />
-
-          <StatCard
-            icon="leaf-outline"
-            value="56.32 q"
-            label="Procured today"
-          />
-        </View>
-
-        {/* Current Farmer Details */}
-        <Text style={styles.sectionTitle}>Your Procurement</Text>
-
-        <View style={styles.procurementCard}>
-          <View style={styles.procurementRow}>
-            <View style={styles.detailIcon}>
-              <Ionicons
-                name="leaf-outline"
-                size={19}
-                color="#2F7D4A"
-              />
-            </View>
-
-            <View style={styles.detailText}>
-              <Text style={styles.detailLabel}>Commodity</Text>
-              <Text style={styles.detailValue}>Wheat</Text>
-            </View>
-          </View>
-
-          <View style={styles.procurementRow}>
-            <View style={styles.detailIcon}>
-              <Ionicons
-                name="bar-chart-outline"
-                size={19}
-                color="#2F7D4A"
-              />
-            </View>
-
-            <View style={styles.detailText}>
-              <Text style={styles.detailLabel}>
-                Approximate Quantity
-              </Text>
-              <Text style={styles.detailValue}>32 Quintals</Text>
-            </View>
-          </View>
-
-          <View style={styles.procurementRow}>
-            <View style={styles.detailIcon}>
-              <Ionicons
-                name="location-outline"
-                size={19}
-                color="#2F7D4A"
-              />
-            </View>
-
-            <View style={styles.detailText}>
-              <Text style={styles.detailLabel}>
-                Procurement Center
-              </Text>
-              <Text style={styles.detailValue}>
-                Green Valley Center
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Important Notice */}
-        <View style={styles.noticeCard}>
-          <Ionicons
-            name="notifications-outline"
-            size={20}
-            color="#D99A27"
-          />
-
-          <Text style={styles.noticeText}>
-            You will receive a notification when your token is
-            approaching. Please stay within the center premises.
-          </Text>
-        </View>
-
-        {/* Bottom space */}
-        <View style={{ height: 30 }} />
-      </ScrollView>
-
-      {/* Bottom Navigation */}
-      <View
-        style={[
-          styles.bottomNav,
-          { paddingBottom: Math.max(insets.bottom, 10) },
-        ]}
-      >
-        <NavItem
-          icon="home-outline"
-          label="Home"
-          onPress={() => router.push('/')}
-        />
-
-        <NavItem
-          icon="pulse"
-          label="Live Queue"
-          active
-          onPress={() => {}}
-        />
-
-        <Pressable
-          style={styles.centerTokenButton}
-          onPress={() => router.push('/my-token')}
-        >
-          <View style={styles.tokenButtonCircle}>
-            <Ionicons
-              name="qr-code-outline"
-              size={23}
-              color="#FFFFFF"
-            />
-          </View>
-          <Text style={styles.centerTokenLabel}>Token</Text>
-        </Pressable>
-
-        <NavItem
-          icon="chatbubble-ellipses-outline"
-          label="Grievance"
-          onPress={() => {}}
-        />
-
-        <NavItem
-          icon="person-outline"
-          label="Profile"
-          onPress={() => {}}
-        />
-      </View>
-    </View>
-  );
+interface Center {
+  id: number;
+  name: string;
+  address?: string;
+  location?: string;
+  activeCounters?: number;
+  avgServiceMinutes?: number;
 }
 
-/* ---------------- Stage Item ---------------- */
+interface Slot {
+  id: number;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  center: Center;
+}
 
-type StageItemProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  subtitle: string;
-  status: 'completed' | 'current' | 'pending';
+interface Booking {
+  id?: number;
+  bookingId: string;
+  tokenNumber: string | null;
+  tokenStatus: string;
+  status: string;
+  commodity: string;
+  quantityQuintals: number;
+  estimatedWaitMin?: number | null;
+  createdAt?: string;
+  slotId: number;
+  slot: Slot;
+}
+
+interface BookingApiResponse {
+  success?: boolean;
+  data?: Booking | Booking[];
+  message?: string;
+}
+
+interface QueueData {
+  tokenNumber: string;
+  nowServing: string | null;
+  farmersAhead: number;
+  queueLength: number;
+  activeCounters: number;
+  avgServiceMinutes: number;
+  estimatedWaitMin: number;
+  currentStage: string;
+  centerName: string;
+  slotDate: string;
+  startTime: string;
+  endTime: string;
+  updatedAt: string;
+}
+
+interface QueueApiResponse {
+  success?: boolean;
+  data?: QueueData;
+  message?: string;
+}
+
+const formatDate = (dateString?: string) => {
+  if (!dateString) return '—';
+
+  try {
+    const datePart = dateString.split('T')[0];
+
+    if (datePart) {
+      const [year, month, day] = datePart.split('-').map(Number);
+
+      if (year && month && day) {
+        const date = new Date(year, month - 1, day);
+
+        return date.toLocaleDateString('en-IN', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+    }
+
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
 };
 
-function StageItem({
-  icon,
+const formatTime = (timeString?: string) => {
+  if (!timeString) return '—';
+
+  if (timeString.includes('T')) {
+    const timePart = timeString.split('T')[1];
+
+    if (timePart) {
+      const match = timePart.match(/^(\d{1,2}):(\d{2})/);
+
+      if (match) {
+        const hour = Number(match[1]);
+        const minute = match[2];
+
+        const suffix = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour % 12 || 12;
+
+        return `${displayHour}:${minute} ${suffix}`;
+      }
+    }
+  }
+
+  const match = timeString.match(/^(\d{1,2}):(\d{2})/);
+
+  if (!match) return timeString;
+
+  const hour = Number(match[1]);
+  const minute = match[2];
+
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+
+  return `${displayHour}:${minute} ${suffix}`;
+};
+
+const getStatusLabel = (status?: string) => {
+  switch (status) {
+    case 'SERVING':
+      return 'Being Served';
+
+    case 'READY':
+      return 'Your Turn';
+
+    case 'COMPLETED':
+      return 'Completed';
+
+    case 'WAITING':
+      return 'In Queue';
+
+    default:
+      return status || 'Waiting';
+  }
+};
+
+const getStatusIcon = (
+  status?: string
+): keyof typeof Ionicons.glyphMap => {
+  switch (status) {
+    case 'SERVING':
+      return 'radio';
+
+    case 'READY':
+      return 'checkmark-circle';
+
+    case 'COMPLETED':
+      return 'checkmark-done-circle';
+
+    default:
+      return 'time-outline';
+  }
+};
+
+type StageStatus = 'completed' | 'current' | 'pending';
+
+const getStageStatus = (
+  stage: string,
+  target: string
+): StageStatus => {
+  const stages = [
+    'TOKEN_QUEUE',
+    'QUALITY_CHECK',
+    'WEIGHTMENT',
+    'FINALIZATION',
+    'COMPLETED',
+  ];
+
+  const currentIndex = stages.indexOf(stage);
+  const targetIndex = stages.indexOf(target);
+
+  if (currentIndex === -1 || targetIndex === -1) {
+    return 'pending';
+  }
+
+  if (targetIndex < currentIndex) {
+    return 'completed';
+  }
+
+  if (targetIndex === currentIndex) {
+    return 'current';
+  }
+
+  return 'pending';
+};
+
+interface TimelineItemProps {
+  title: string;
+  subtitle: string;
+  status: StageStatus;
+  last?: boolean;
+}
+
+function TimelineItem({
   title,
   subtitle,
   status,
-}: StageItemProps) {
-  const iconBackground =
+  last = false,
+}: TimelineItemProps) {
+  const icon =
     status === 'completed'
-      ? '#EAF4EC'
+      ? 'checkmark'
       : status === 'current'
-      ? '#FFF5DF'
-      : '#F0F2EF';
-
-  const iconColor =
-    status === 'completed'
-      ? '#2F7D4A'
-      : status === 'current'
-      ? '#D99A27'
-      : '#9AA69F';
+        ? 'ellipse'
+        : 'ellipse-outline';
 
   return (
-    <View style={styles.stageItem}>
-      <View
-        style={[
-          styles.stageIcon,
-          { backgroundColor: iconBackground },
-        ]}
-      >
-        <Ionicons
-          name={icon}
-          size={20}
-          color={iconColor}
-        />
+    <View style={styles.timelineItem}>
+      <View style={styles.timelineLeft}>
+        <View
+          style={[
+            styles.timelineDot,
+            status === 'completed' && styles.timelineDotCompleted,
+            status === 'current' && styles.timelineDotCurrent,
+            status === 'pending' && styles.timelineDotPending,
+          ]}
+        >
+          <Ionicons
+            name={icon}
+            size={status === 'current' ? 8 : 14}
+            color={status === 'pending' ? '#AAB5AC' : '#FFFFFF'}
+          />
+        </View>
+
+        {!last && (
+          <View
+            style={[
+              styles.timelineLine,
+              status === 'completed' && styles.timelineLineCompleted,
+            ]}
+          />
+        )}
       </View>
 
-      <View style={styles.stageContent}>
+      <View style={styles.timelineContent}>
         <Text
           style={[
-            styles.stageTitle,
-            status === 'current' && styles.currentStageTitle,
+            styles.timelineTitle,
+            status === 'pending' && styles.timelineTitlePending,
           ]}
         >
           {title}
         </Text>
 
-        <Text style={styles.stageSubtitle}>{subtitle}</Text>
+        <Text style={styles.timelineSubtitle}>
+          {subtitle}
+        </Text>
       </View>
 
       {status === 'completed' && (
-        <Ionicons
-          name="checkmark-circle"
-          size={20}
-          color="#2F7D4A"
-        />
+        <View style={styles.completedBadge}>
+          <Text style={styles.completedBadgeText}>
+            DONE
+          </Text>
+        </View>
       )}
 
       {status === 'current' && (
         <View style={styles.currentBadge}>
-          <Text style={styles.currentBadgeText}>NEXT</Text>
+          <Text style={styles.currentBadgeText}>
+            CURRENT
+          </Text>
         </View>
       )}
     </View>
   );
 }
 
-/* ---------------- Stat Card ---------------- */
+export default function LiveQueueScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
 
-type StatCardProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  value: string;
-  label: string;
-};
+  const [booking, setBooking] = useState<Booking | null>(null);
+  const [queue, setQueue] = useState<QueueData | null>(null);
 
-function StatCard({
-  icon,
-  value,
-  label,
-}: StatCardProps) {
-  return (
-    <View style={styles.statCard}>
-      <View style={styles.statIcon}>
-        <Ionicons
-          name={icon}
-          size={18}
-          color="#2F7D4A"
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchQueueAndBooking = useCallback(
+    async (showLoader = true) => {
+      try {
+        if (showLoader) {
+          setLoading(true);
+        }
+
+        setError(null);
+
+        const token =
+          await SecureStore.getItemAsync('authToken');
+
+        if (!token) {
+          router.replace('/welcome');
+          return;
+        }
+
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        };
+
+        const [bookingResponse, queueResponse] =
+          await Promise.all([
+            fetch(
+              `${API_BASE_URL}/bookings/my-upcoming`,
+              {
+                method: 'GET',
+                headers,
+              }
+            ),
+
+            fetch(`${API_BASE_URL}/queue/my`, {
+              method: 'GET',
+              headers,
+            }),
+          ]);
+
+        if (
+          bookingResponse.status === 401 ||
+          queueResponse.status === 401
+        ) {
+          await SecureStore.deleteItemAsync('authToken');
+          await SecureStore.deleteItemAsync('farmer');
+
+          router.replace('/welcome');
+          return;
+        }
+
+        const bookingData: BookingApiResponse =
+          await bookingResponse.json();
+
+        const queueData: QueueApiResponse =
+          await queueResponse.json();
+
+        if (!bookingResponse.ok || !bookingData.success) {
+          throw new Error(
+            bookingData.message ||
+              'Unable to fetch your booking.'
+          );
+        }
+
+        const bookingResult = bookingData.data;
+
+        let currentBooking: Booking | null = null;
+
+        if (Array.isArray(bookingResult)) {
+          currentBooking =
+            bookingResult[0] || null;
+        } else {
+          currentBooking =
+            bookingResult || null;
+        }
+
+        setBooking(currentBooking);
+
+        if (
+          queueResponse.ok &&
+          queueData.success &&
+          queueData.data
+        ) {
+          setQueue(queueData.data);
+        } else {
+          setQueue(null);
+        }
+      } catch (err) {
+        console.error(
+          'Live queue fetch error:',
+          err
+        );
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Unable to load live queue.'
+        );
+      } finally {
+        if (showLoader) {
+          setLoading(false);
+        }
+
+        setRefreshing(false);
+      }
+    },
+    [router]
+  );
+
+  useEffect(() => {
+    fetchQueueAndBooking();
+
+    /*
+     * Poll the backend every 5 seconds.
+     *
+     * This means:
+     * Operator changes queue
+     *       ↓
+     * Backend updates
+     *       ↓
+     * Farmer app refreshes automatically
+     */
+    const interval = setInterval(() => {
+      fetchQueueAndBooking(false);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [fetchQueueAndBooking]);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchQueueAndBooking(false);
+  }, [fetchQueueAndBooking]);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator
+          size="large"
+          color="#2E7D32"
         />
+
+        <Text style={styles.loadingText}>
+          Loading live queue...
+        </Text>
+      </View>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <View
+        style={[
+          styles.emptyScreen,
+          {
+            paddingTop: insets.top + 20,
+          },
+        ]}
+      >
+        <View style={styles.emptyIcon}>
+          <Ionicons
+            name="ticket-outline"
+            size={38}
+            color="#2E7D32"
+          />
+        </View>
+
+        <Text style={styles.emptyTitle}>
+          No Active Booking
+        </Text>
+
+        <Text style={styles.emptyDescription}>
+          You don't have an upcoming confirmed booking.
+          Book a procurement slot to see your live queue
+          status here.
+        </Text>
+
+        <Pressable
+          style={styles.bookButton}
+          onPress={() => router.push('/book-slot')}
+        >
+          <Text style={styles.bookButtonText}>
+            Book a Slot
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>
+            Go Back
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const center = booking.slot?.center;
+
+  /*
+   * IMPORTANT:
+   *
+   * The farmer's own token status has priority.
+   *
+   * If the booking is completed, we should not display
+   * the center's reset TOKEN_QUEUE stage.
+   */
+  const isCompleted =
+    booking.tokenStatus === 'COMPLETED' ||
+    booking.status === 'COMPLETED';
+
+  const isServing =
+    booking.tokenStatus === 'SERVING';
+
+  const isWaiting =
+    booking.tokenStatus === 'WAITING' ||
+    booking.tokenStatus === 'READY';
+
+  /*
+   * The center's current stage should only be applied
+   * when the currently served token is actually OUR token.
+   */
+  const isOurTokenCurrentlyServing =
+    !!queue?.nowServing &&
+    !!booking.tokenNumber &&
+    queue.nowServing === booking.tokenNumber;
+
+  let currentStage = 'TOKEN_QUEUE';
+
+  if (isCompleted) {
+    currentStage = 'COMPLETED';
+  } else if (isOurTokenCurrentlyServing) {
+    currentStage =
+      queue?.currentStage || 'TOKEN_QUEUE';
+  } else if (isServing) {
+    currentStage =
+      queue?.currentStage || 'TOKEN_QUEUE';
+  } else if (isWaiting) {
+    currentStage = 'TOKEN_QUEUE';
+  }
+
+  const estimatedWait =
+    isCompleted
+      ? 0
+      : typeof queue?.estimatedWaitMin === 'number'
+        ? queue.estimatedWaitMin
+        : typeof booking.estimatedWaitMin === 'number'
+          ? booking.estimatedWaitMin
+          : null;
+
+  const farmersAhead =
+    isCompleted
+      ? 0
+      : queue?.farmersAhead ?? 0;
+
+  const queueLength =
+    queue?.queueLength ?? 0;
+
+  const activeCounters =
+    queue?.activeCounters ??
+    center?.activeCounters ??
+    0;
+
+  const avgServiceMinutes =
+    queue?.avgServiceMinutes ??
+    center?.avgServiceMinutes ??
+    0;
+
+  const queueProgressWidth =
+    isCompleted
+      ? ('100%' as `${number}%`)
+      : queue && queue.queueLength > 0
+        ? (`${Math.min(
+            100,
+            Math.max(
+              10,
+              ((queue.queueLength -
+                queue.farmersAhead) /
+                queue.queueLength) *
+                100
+            )
+          )}%` as `${number}%`)
+        : ('10%' as `${number}%`);
+
+  const tokenStatus = isCompleted
+    ? 'Completed'
+    : getStatusLabel(booking.tokenStatus);
+
+  const tokenIcon = isCompleted
+    ? 'checkmark-done-circle'
+    : getStatusIcon(booking.tokenStatus);
+
+  const aiMessage =
+    isCompleted
+      ? 'Your procurement has been completed.'
+      : isOurTokenCurrentlyServing
+        ? 'Your token is currently being processed.'
+        : estimatedWait === 0
+          ? 'You are next in line.'
+          : estimatedWait !== null
+            ? `Your estimated turn is in about ${estimatedWait} minutes.`
+            : 'Waiting for live queue data.';
+
+  return (
+    <View style={styles.container}>
+      {/* HEADER */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + 8,
+          },
+        ]}
+      >
+        <Pressable
+          style={styles.headerBackButton}
+          onPress={() => router.back()}
+        >
+          <Ionicons
+            name="arrow-back"
+            size={22}
+            color="#183B1D"
+          />
+        </Pressable>
+
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>
+            Live Queue
+          </Text>
+
+          <Text
+            style={styles.headerSubtitle}
+            numberOfLines={1}
+          >
+            {queue?.centerName ||
+              center?.name ||
+              'Procurement Center'}
+          </Text>
+        </View>
+
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+
+          <Text style={styles.liveText}>
+            LIVE
+          </Text>
+        </View>
       </View>
 
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom: insets.bottom + 90,
+          },
+        ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#2E7D32"
+          />
+        }
+      >
+        {/* ERROR */}
+        {error && (
+          <View style={styles.errorBox}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={18}
+              color="#B3261E"
+            />
+
+            <Text style={styles.errorText}>
+              {error}
+            </Text>
+          </View>
+        )}
+
+        {/* TOKEN CARD */}
+        <View style={styles.tokenCard}>
+          <View style={styles.tokenCardTop}>
+            <View>
+              <Text style={styles.sectionEyebrow}>
+                YOUR TOKEN
+              </Text>
+
+              <Text style={styles.tokenNumber}>
+                {booking.tokenNumber || '—'}
+              </Text>
+            </View>
+
+            <View style={styles.statusPill}>
+              <Ionicons
+                name={tokenIcon}
+                size={14}
+                color="#2E7D32"
+              />
+
+              <Text style={styles.statusPillText}>
+                {tokenStatus}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.tokenDivider} />
+
+          <View style={styles.bookingInfoRow}>
+            <View style={styles.bookingInfoItem}>
+              <Ionicons
+                name="calendar-outline"
+                size={16}
+                color="#5C6B61"
+              />
+
+              <View>
+                <Text style={styles.infoLabel}>
+                  DATE
+                </Text>
+
+                <Text style={styles.infoValue}>
+                  {formatDate(
+                    queue?.slotDate ||
+                      booking.slot?.slotDate
+                  )}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.bookingInfoItem}>
+              <Ionicons
+                name="time-outline"
+                size={16}
+                color="#5C6B61"
+              />
+
+              <View>
+                <Text style={styles.infoLabel}>
+                  TIME
+                </Text>
+
+                <Text style={styles.infoValue}>
+                  {formatTime(
+                    queue?.startTime ||
+                      booking.slot?.startTime
+                  )}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.bookingInfoRow}>
+            <View style={styles.bookingInfoItem}>
+              <Ionicons
+                name="leaf-outline"
+                size={16}
+                color="#5C6B61"
+              />
+
+              <View>
+                <Text style={styles.infoLabel}>
+                  COMMODITY
+                </Text>
+
+                <Text style={styles.infoValue}>
+                  {booking.commodity || '—'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.bookingInfoItem}>
+              <Ionicons
+                name="scale-outline"
+                size={16}
+                color="#5C6B61"
+              />
+
+              <View>
+                <Text style={styles.infoLabel}>
+                  QUANTITY
+                </Text>
+
+                <Text style={styles.infoValue}>
+                  {booking.quantityQuintals ?? '—'}{' '}
+                  Quintals
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* QUEUE ESTIMATE */}
+        <View style={styles.aiCard}>
+          <View style={styles.aiHeader}>
+            <View style={styles.aiIconBox}>
+              <Ionicons
+                name="time-outline"
+                size={18}
+                color="#FFFFFF"
+              />
+            </View>
+
+            <View style={styles.aiHeaderText}>
+              <Text style={styles.aiTitle}>
+                Queue Estimate
+              </Text>
+
+              <Text style={styles.aiSubtitle}>
+                Current estimated waiting time
+              </Text>
+            </View>
+
+            <View style={styles.aiBadge}>
+              <Text style={styles.aiBadgeText}>
+                LIVE
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.aiEtaRow}>
+            <View>
+              <Text style={styles.aiEtaNumber}>
+                {estimatedWait !== null
+                  ? estimatedWait
+                  : '—'}
+              </Text>
+
+              <Text style={styles.aiEtaUnit}>
+                minutes
+              </Text>
+            </View>
+
+            <View style={styles.aiEtaMessage}>
+              <Ionicons
+                name={
+                  isCompleted
+                    ? 'checkmark-circle-outline'
+                    : 'trending-down-outline'
+                }
+                size={18}
+                color="#2E7D32"
+              />
+
+              <Text style={styles.aiEtaText}>
+                {aiMessage}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.aiFooter}>
+            Estimate uses current queue position,
+            active counters and average service time.
+            ML prediction can be connected here later.
+          </Text>
+        </View>
+
+        {/* QUEUE PROGRESS */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.cardTitle}>
+                Queue Progress
+              </Text>
+
+              <Text style={styles.cardSubtitle}>
+                Your position at the procurement center
+              </Text>
+            </View>
+
+            <Ionicons
+              name="people-outline"
+              size={21}
+              color="#2E7D32"
+            />
+          </View>
+
+          <View style={styles.queueProgressBox}>
+            <View style={styles.queueTokenRow}>
+              <View style={styles.queueTokenItem}>
+                <Text style={styles.queueTokenLabel}>
+                  NOW SERVING
+                </Text>
+
+                <Text style={styles.queueTokenValue}>
+                  {isCompleted
+                    ? '—'
+                    : queue?.nowServing || '—'}
+                </Text>
+              </View>
+
+              <Ionicons
+                name="arrow-forward"
+                size={22}
+                color="#9AA89D"
+              />
+
+              <View style={styles.queueTokenItem}>
+                <Text style={styles.queueTokenLabel}>
+                  YOUR TOKEN
+                </Text>
+
+                <Text style={styles.queueTokenValue}>
+                  {booking.tokenNumber || '—'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.queueProgressTrack}>
+              <View
+                style={[
+                  styles.queueProgressFill,
+                  {
+                    width: queueProgressWidth,
+                  },
+                ]}
+              />
+            </View>
+
+            <View style={styles.queueAheadRow}>
+              <Text style={styles.queueAheadText}>
+                {isCompleted
+                  ? 'Procurement completed'
+                  : `${farmersAhead} farmers ahead`}
+              </Text>
+
+              <Text style={styles.queueAheadText}>
+                {isCompleted
+                  ? 'Done'
+                  : `${queueLength} in queue`}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* PROCUREMENT PROGRESS */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.cardTitle}>
+                Procurement Progress
+              </Text>
+
+              <Text style={styles.cardSubtitle}>
+                Current processing stage
+              </Text>
+            </View>
+
+            <Ionicons
+              name="git-branch-outline"
+              size={21}
+              color="#2E7D32"
+            />
+          </View>
+
+          <View style={styles.timeline}>
+            <TimelineItem
+              title="Token Queue"
+              subtitle="Waiting for your turn"
+              status={getStageStatus(
+                currentStage,
+                'TOKEN_QUEUE'
+              )}
+            />
+
+            <TimelineItem
+              title="Quality Check"
+              subtitle="Produce quality verification"
+              status={getStageStatus(
+                currentStage,
+                'QUALITY_CHECK'
+              )}
+            />
+
+            <TimelineItem
+              title="Weightment"
+              subtitle="Official produce weight"
+              status={getStageStatus(
+                currentStage,
+                'WEIGHTMENT'
+              )}
+            />
+
+            <TimelineItem
+              title="Finalization"
+              subtitle="Procurement record finalization"
+              status={getStageStatus(
+                currentStage,
+                'FINALIZATION'
+              )}
+              last
+            />
+          </View>
+
+          {isCompleted && (
+            <View style={styles.completedMessage}>
+              <Ionicons
+                name="checkmark-circle"
+                size={19}
+                color="#2E7D32"
+              />
+
+              <Text style={styles.completedMessageText}>
+                Your procurement has been completed
+                successfully.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* LIVE CENTER STATUS */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.cardTitle}>
+                Live Center Status
+              </Text>
+
+              <Text style={styles.cardSubtitle}>
+                Current procurement center activity
+              </Text>
+            </View>
+
+            <View style={styles.liveSmallBadge}>
+              <View style={styles.liveSmallDot} />
+
+              <Text style={styles.liveSmallText}>
+                LIVE
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.statsGrid}>
+            <View style={styles.statBox}>
+              <View style={styles.statIconCircle}>
+                <Ionicons
+                  name="people-outline"
+                  size={18}
+                  color="#2E7D32"
+                />
+              </View>
+
+              <Text style={styles.statValue}>
+                {queue
+                  ? String(queueLength)
+                  : '—'}
+              </Text>
+
+              <Text style={styles.statLabel}>
+                FARMERS IN QUEUE
+              </Text>
+            </View>
+
+            <View style={styles.statBox}>
+              <View style={styles.statIconCircle}>
+                <Ionicons
+                  name="speedometer-outline"
+                  size={18}
+                  color="#2E7D32"
+                />
+              </View>
+
+              <Text style={styles.statValue}>
+                {activeCounters || '—'}
+              </Text>
+
+              <Text style={styles.statLabel}>
+                ACTIVE COUNTERS
+              </Text>
+            </View>
+
+            <View style={styles.statBox}>
+              <View style={styles.statIconCircle}>
+                <Ionicons
+                  name="timer-outline"
+                  size={18}
+                  color="#2E7D32"
+                />
+              </View>
+
+              <Text style={styles.statValue}>
+                {avgServiceMinutes
+                  ? `${avgServiceMinutes}m`
+                  : '—'}
+              </Text>
+
+              <Text style={styles.statLabel}>
+                AVG PROCESSING
+              </Text>
+            </View>
+
+            <View style={styles.statBox}>
+              <View style={styles.statIconCircle}>
+                <Ionicons
+                  name="cube-outline"
+                  size={18}
+                  color="#2E7D32"
+                />
+              </View>
+
+              <Text style={styles.statValue}>
+                —
+              </Text>
+
+              <Text style={styles.statLabel}>
+                TODAY'S PROCUREMENT
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.centerNotice}>
+            <Ionicons
+              name="information-circle-outline"
+              size={17}
+              color="#2E7D32"
+            />
+
+            <Text style={styles.centerNoticeText}>
+              Queue status automatically refreshes
+              every 5 seconds from the procurement
+              center's live queue data.
+            </Text>
+          </View>
+        </View>
+
+        {/* YOUR PROCUREMENT */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.cardTitle}>
+                Your Procurement
+              </Text>
+
+              <Text style={styles.cardSubtitle}>
+                Booking details
+              </Text>
+            </View>
+
+            <Ionicons
+              name="document-text-outline"
+              size={21}
+              color="#2E7D32"
+            />
+          </View>
+
+          <View style={styles.procurementRow}>
+            <Text style={styles.procurementLabel}>
+              Booking ID
+            </Text>
+
+            <Text style={styles.procurementValue}>
+              {booking.bookingId || '—'}
+            </Text>
+          </View>
+
+          <View style={styles.procurementRow}>
+            <Text style={styles.procurementLabel}>
+              Token
+            </Text>
+
+            <Text style={styles.procurementValue}>
+              {booking.tokenNumber || '—'}
+            </Text>
+          </View>
+
+          <View style={styles.procurementRow}>
+            <Text style={styles.procurementLabel}>
+              Commodity
+            </Text>
+
+            <Text style={styles.procurementValue}>
+              {booking.commodity || '—'}
+            </Text>
+          </View>
+
+          <View style={styles.procurementRow}>
+            <Text style={styles.procurementLabel}>
+              Quantity
+            </Text>
+
+            <Text style={styles.procurementValue}>
+              {booking.quantityQuintals ?? '—'} Quintals
+            </Text>
+          </View>
+
+          <View style={styles.procurementRow}>
+            <Text style={styles.procurementLabel}>
+              Center
+            </Text>
+
+            <Text
+              style={styles.procurementValue}
+              numberOfLines={2}
+            >
+              {queue?.centerName ||
+                center?.name ||
+                '—'}
+            </Text>
+          </View>
+        </View>
+
+        {/* STAY UPDATED */}
+        <View style={styles.updateCard}>
+          <View style={styles.updateIcon}>
+            <Ionicons
+              name="notifications-outline"
+              size={20}
+              color="#2E7D32"
+            />
+          </View>
+
+          <View style={styles.updateTextContainer}>
+            <Text style={styles.updateTitle}>
+              Stay updated
+            </Text>
+
+            <Text style={styles.updateText}>
+              Your queue position and procurement
+              progress are refreshed automatically.
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* BOTTOM NAVIGATION */}
+      <View
+        style={[
+          styles.bottomNav,
+          {
+            paddingBottom: Math.max(
+              insets.bottom,
+              10
+            ),
+          },
+        ]}
+      >
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.replace('/home')}
+        >
+          <Ionicons
+            name="home-outline"
+            size={21}
+            color="#8A968D"
+          />
+
+          <Text style={styles.navLabel}>
+            Home
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.navItem,
+            styles.navItemActive,
+          ]}
+        >
+          <View style={styles.activeNavIcon}>
+            <Ionicons
+              name="pulse"
+              size={20}
+              color="#FFFFFF"
+            />
+          </View>
+
+          <Text
+            style={[
+              styles.navLabel,
+              styles.navLabelActive,
+            ]}
+          >
+            Live Queue
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/my-token')}
+        >
+          <Ionicons
+            name="qr-code-outline"
+            size={21}
+            color="#8A968D"
+          />
+
+          <Text style={styles.navLabel}>
+            Token
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/grievance')}
+        >
+          <Ionicons
+            name="chatbubble-ellipses-outline"
+            size={21}
+            color="#8A968D"
+          />
+
+          <Text style={styles.navLabel}>
+            Grievance
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.navItem}
+          onPress={() => router.push('/profile')}
+        >
+          <Ionicons
+            name="person-outline"
+            size={21}
+            color="#8A968D"
+          />
+
+          <Text style={styles.navLabel}>
+            Profile
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
-/* ---------------- Navigation Item ---------------- */
-
-type NavItemProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  active?: boolean;
-  onPress: () => void;
-};
-
-function NavItem({
-  icon,
-  label,
-  active,
-  onPress,
-}: NavItemProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={styles.navItem}
-    >
-      <Ionicons
-        name={icon}
-        size={21}
-        color={active ? '#2F7D4A' : '#8A958E'}
-      />
-
-      <Text
-        style={[
-          styles.navLabel,
-          active && styles.activeNavLabel,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-/* ---------------- Styles ---------------- */
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F6F8F3',
+    backgroundColor: '#F7FAF7',
   },
 
-  header: {
-    backgroundColor: '#123B2A',
-    paddingHorizontal: 18,
-    paddingBottom: 15,
-    flexDirection: 'row',
+  loadingScreen: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F7FAF7',
   },
 
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1B5137',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: '#647067',
+    fontWeight: '600',
+  },
+
+  emptyScreen: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: '#F7FAF7',
+  },
+
+  emptyIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#E8F3E8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#183B1D',
+  },
+
+  emptyDescription: {
+    marginTop: 10,
+    textAlign: 'center',
+    lineHeight: 21,
+    fontSize: 13,
+    color: '#69756D',
+  },
+
+  bookButton: {
+    marginTop: 24,
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#2E7D32',
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  headerTitleContainer: {
+  bookButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  backButton: {
+    marginTop: 12,
+    height: 44,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+  },
+
+  backButtonText: {
+    color: '#2E7D32',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  header: {
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F7FAF7',
+  },
+
+  headerBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5EBE5',
+  },
+
+  headerCenter: {
     flex: 1,
     marginLeft: 12,
   },
 
   headerTitle: {
-    color: '#FFFFFF',
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '900',
+    color: '#183B1D',
   },
 
   headerSubtitle: {
-    color: '#B9D2C1',
-    fontSize: 12,
     marginTop: 2,
+    fontSize: 11,
+    color: '#718078',
+    fontWeight: '600',
   },
 
-  liveIndicator: {
+  liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EAF4EC',
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: 20,
+    backgroundColor: '#E8F5E9',
   },
 
   liveDot: {
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: '#2F7D4A',
+    backgroundColor: '#2E7D32',
     marginRight: 5,
   },
 
   liveText: {
-    color: '#2F7D4A',
-    fontSize: 10,
-    fontWeight: '800',
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#2E7D32',
+    letterSpacing: 0.5,
   },
 
   scrollContent: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+  },
+
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FDECEA',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+
+  errorText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#9B2922',
+    fontWeight: '600',
   },
 
   tokenCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 14,
+    borderRadius: 18,
+    padding: 17,
     borderWidth: 1,
-    borderColor: '#E6EBE5',
+    borderColor: '#E7ECE7',
+    marginBottom: 12,
   },
 
-  tokenTopRow: {
+  tokenCardTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
 
-  smallLabel: {
-    fontSize: 10,
+  sectionEyebrow: {
+    fontSize: 9,
+    color: '#829087',
     fontWeight: '800',
-    color: '#8A958E',
     letterSpacing: 1,
   },
 
   tokenNumber: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: '#18352A',
-    marginTop: 2,
-  },
-
-  tokenStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EAF4EC',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 15,
-  },
-
-  tokenStatusText: {
-    color: '#2F7D4A',
-    fontSize: 11,
-    fontWeight: '700',
-    marginLeft: 5,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: '#E9EDE9',
-    marginVertical: 14,
-  },
-
-  queueRow: {
-    flexDirection: 'row',
-  },
-
-  queueItem: {
-    flex: 1,
-  },
-
-  queueLabel: {
-    color: '#8A958E',
-    fontSize: 9,
-    fontWeight: '700',
+    marginTop: 3,
+    fontSize: 32,
+    lineHeight: 38,
+    color: '#183B1D',
+    fontWeight: '900',
     letterSpacing: 0.5,
   },
 
-  queueValue: {
-    color: '#18352A',
-    fontSize: 20,
-    fontWeight: '800',
-    marginTop: 4,
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EAF5EA',
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
   },
 
-  verticalDivider: {
-    width: 1,
-    backgroundColor: '#E3E8E3',
-    marginHorizontal: 20,
+  statusPillText: {
+    marginLeft: 5,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#2E7D32',
+  },
+
+  tokenDivider: {
+    height: 1,
+    backgroundColor: '#EDF1ED',
+    marginVertical: 14,
+  },
+
+  bookingInfoRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+
+  bookingInfoItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  infoLabel: {
+    fontSize: 8,
+    color: '#98A39B',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  infoValue: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#263C2A',
+    fontWeight: '700',
   },
 
   aiCard: {
-    backgroundColor: '#FFF9EA',
+    backgroundColor: '#EDF7EE',
     borderRadius: 18,
-    padding: 15,
-    flexDirection: 'row',
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#F2E4C1',
-    marginBottom: 20,
+    borderColor: '#DCECDC',
   },
 
-  aiIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFF0C9',
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  aiIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: '#2E7D32',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 11,
   },
 
-  aiContent: {
+  aiHeaderText: {
     flex: 1,
-  },
-
-  aiTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginLeft: 10,
   },
 
   aiTitle: {
-    color: '#6E531A',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '900',
+    color: '#183B1D',
+  },
+
+  aiSubtitle: {
+    marginTop: 2,
+    fontSize: 10,
+    color: '#6E7D72',
+    fontWeight: '600',
   },
 
   aiBadge: {
-    backgroundColor: '#D99A27',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-    marginLeft: 7,
+    backgroundColor: '#D8EAD9',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
   },
 
   aiBadgeText: {
-    color: '#FFFFFF',
     fontSize: 8,
-    fontWeight: '800',
+    fontWeight: '900',
+    color: '#2E7D32',
+    letterSpacing: 0.7,
   },
 
-  aiMainText: {
-    color: '#5E543B',
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 5,
+  aiEtaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
   },
 
-  aiTime: {
-    color: '#9A6A12',
-    fontWeight: '800',
+  aiEtaNumber: {
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: '900',
+    color: '#183B1D',
   },
 
-  aiSubText: {
-    color: '#8B8061',
+  aiEtaUnit: {
     fontSize: 10,
-    lineHeight: 15,
-    marginTop: 5,
+    color: '#718078',
+    fontWeight: '700',
+    marginTop: 1,
+  },
+
+  aiEtaMessage: {
+    flex: 1,
+    marginLeft: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  aiEtaText: {
+    flex: 1,
+    marginLeft: 7,
+    fontSize: 11,
+    lineHeight: 17,
+    color: '#526158',
+    fontWeight: '600',
+  },
+
+  aiFooter: {
+    marginTop: 13,
+    fontSize: 9,
+    lineHeight: 14,
+    color: '#78867C',
+  },
+
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E7ECE7',
+    marginBottom: 12,
   },
 
   sectionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 9,
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
 
-  sectionTitle: {
-    color: '#18352A',
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 9,
+  cardTitle: {
+    fontSize: 15,
+    color: '#183B1D',
+    fontWeight: '900',
   },
 
-  updatedText: {
-    color: '#8A958E',
+  cardSubtitle: {
+    marginTop: 3,
     fontSize: 10,
+    color: '#7B877F',
+    fontWeight: '600',
   },
 
-  progressCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 17,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E6EBE5',
+  queueProgressBox: {
+    backgroundColor: '#F7F9F7',
+    borderRadius: 14,
+    padding: 14,
   },
 
-  progressHeader: {
+  queueTokenRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
 
-  progressLeft: {
-    color: '#2F7D4A',
-    fontSize: 13,
+  queueTokenItem: {
+    flex: 1,
+  },
+
+  queueTokenLabel: {
+    fontSize: 9,
     fontWeight: '800',
+    color: '#8A968D',
+    letterSpacing: 0.7,
   },
 
-  progressRight: {
-    color: '#D99A27',
-    fontSize: 13,
-    fontWeight: '800',
+  queueTokenValue: {
+    marginTop: 4,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#183B1D',
   },
 
-  progressTrack: {
-    height: 8,
-    backgroundColor: '#E8ECE8',
-    borderRadius: 5,
-    marginTop: 12,
-    position: 'relative',
+  queueProgressTrack: {
+    height: 6,
+    backgroundColor: '#E1E8E1',
+    borderRadius: 6,
+    marginTop: 16,
+    overflow: 'hidden',
   },
 
-  progressFill: {
-    width: '68%',
-    height: 8,
-    backgroundColor: '#2F7D4A',
-    borderRadius: 5,
+  queueProgressFill: {
+    height: '100%',
+    backgroundColor: '#2E7D32',
+    borderRadius: 6,
   },
 
-  progressMarker: {
-    position: 'absolute',
-    left: '65%',
-    top: -5,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#FFF5DF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#D99A27',
-  },
-
-  markerDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#D99A27',
-  },
-
-  progressLabels: {
+  queueAheadRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 8,
   },
 
-  progressText: {
-    color: '#8A958E',
+  queueAheadText: {
     fontSize: 10,
+    color: '#748077',
+    fontWeight: '600',
   },
 
-  stageCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#E6EBE5',
+  timeline: {
+    paddingTop: 2,
   },
 
-  stageItem: {
+  timelineItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    minHeight: 52,
+    minHeight: 67,
   },
 
-  stageIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  timelineLeft: {
+    width: 30,
+    alignItems: 'center',
+  },
+
+  timelineDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 2,
   },
 
-  stageContent: {
+  timelineDotCompleted: {
+    backgroundColor: '#2E7D32',
+  },
+
+  timelineDotCurrent: {
+    backgroundColor: '#2E7D32',
+    borderWidth: 5,
+    borderColor: '#DCECDC',
+  },
+
+  timelineDotPending: {
+    backgroundColor: '#F1F4F1',
+    borderWidth: 1,
+    borderColor: '#D9E0D9',
+  },
+
+  timelineLine: {
+    width: 2,
     flex: 1,
-    marginLeft: 11,
+    backgroundColor: '#E1E7E1',
+    marginTop: -1,
   },
 
-  stageTitle: {
-    color: '#526057',
-    fontSize: 13,
-    fontWeight: '700',
+  timelineLineCompleted: {
+    backgroundColor: '#A8CDAA',
   },
 
-  currentStageTitle: {
-    color: '#18352A',
+  timelineContent: {
+    flex: 1,
+    marginLeft: 9,
+    paddingBottom: 15,
+  },
+
+  timelineTitle: {
+    fontSize: 12,
+    color: '#263C2A',
     fontWeight: '800',
   },
 
-  stageSubtitle: {
-    color: '#8A958E',
-    fontSize: 10,
-    marginTop: 3,
+  timelineTitlePending: {
+    color: '#8A958C',
   },
 
-  stageLine: {
-    width: 1,
-    height: 13,
-    backgroundColor: '#DCE3DD',
-    marginLeft: 20,
+  timelineSubtitle: {
+    marginTop: 3,
+    fontSize: 9,
+    color: '#7C877F',
+    lineHeight: 14,
+  },
+
+  completedBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EAF5EA',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 7,
+  },
+
+  completedBadgeText: {
+    fontSize: 7,
+    fontWeight: '900',
+    color: '#2E7D32',
   },
 
   currentBadge: {
-    backgroundColor: '#FFF5DF',
-    paddingHorizontal: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF5D9',
+    paddingHorizontal: 7,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 7,
   },
 
   currentBadgeText: {
-    color: '#B37A14',
+    fontSize: 7,
+    fontWeight: '900',
+    color: '#9A7113',
+  },
+
+  completedMessage: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EAF5EA',
+    borderRadius: 12,
+    padding: 11,
+  },
+
+  completedMessageText: {
+    flex: 1,
+    marginLeft: 7,
+    fontSize: 10,
+    lineHeight: 15,
+    color: '#2E7D32',
+    fontWeight: '700',
+  },
+
+  liveSmallBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EAF5EA',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+
+  liveSmallDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#2E7D32',
+    marginRight: 5,
+  },
+
+  liveSmallText: {
     fontSize: 8,
-    fontWeight: '800',
+    fontWeight: '900',
+    color: '#2E7D32',
   },
 
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    marginHorizontal: -4,
   },
 
-  statCard: {
-    width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E6EBE5',
+  statBox: {
+    width: '50%',
+    padding: 4,
   },
 
-  statIcon: {
+  statIconCircle: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: '#EAF4EC',
+    borderRadius: 10,
+    backgroundColor: '#EAF5EA',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 7,
   },
 
   statValue: {
-    color: '#18352A',
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 19,
+    color: '#183B1D',
+    fontWeight: '900',
   },
 
   statLabel: {
-    color: '#8A958E',
-    fontSize: 9,
-    marginTop: 3,
+    marginTop: 2,
+    fontSize: 8,
+    color: '#87928A',
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 
-  procurementCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 15,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#E6EBE5',
+  centerNotice: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F2F7F2',
+    borderRadius: 11,
+    padding: 10,
+  },
+
+  centerNoticeText: {
+    flex: 1,
+    marginLeft: 7,
+    fontSize: 9,
+    lineHeight: 14,
+    color: '#6E7C72',
+    fontWeight: '600',
   },
 
   procurementRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EFF2EF',
   },
 
-  detailIcon: {
+  procurementLabel: {
+    fontSize: 10,
+    color: '#7C887F',
+    fontWeight: '600',
+  },
+
+  procurementValue: {
+    maxWidth: '58%',
+    textAlign: 'right',
+    fontSize: 11,
+    color: '#263C2A',
+    fontWeight: '800',
+  },
+
+  updateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F7F1',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 8,
+  },
+
+  updateIcon: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EAF4EC',
+    borderRadius: 12,
+    backgroundColor: '#E2F0E2',
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  detailText: {
-    marginLeft: 11,
+  updateTextContainer: {
     flex: 1,
+    marginLeft: 10,
   },
 
-  detailLabel: {
-    color: '#8A958E',
+  updateTitle: {
+    fontSize: 12,
+    color: '#183B1D',
+    fontWeight: '900',
+  },
+
+  updateText: {
+    marginTop: 3,
     fontSize: 9,
-  },
-
-  detailValue: {
-    color: '#18352A',
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-
-  noticeCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF9EA',
-    borderRadius: 15,
-    padding: 13,
-    alignItems: 'flex-start',
-  },
-
-  noticeText: {
-    flex: 1,
-    color: '#6E6041',
-    fontSize: 10,
-    lineHeight: 15,
-    marginLeft: 9,
+    lineHeight: 14,
+    color: '#718078',
+    fontWeight: '600',
   },
 
   bottomNav: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    minHeight: 68,
+    paddingTop: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E4E9E4',
+    borderTopColor: '#E7ECE7',
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-around',
-    paddingTop: 9,
+    alignItems: 'flex-start',
   },
 
   navItem: {
-    width: 62,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+
+  navItemActive: {
+    position: 'relative',
+  },
+
+  activeNavIcon: {
+    width: 34,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#2E7D32',
+    justifyContent: 'center',
     alignItems: 'center',
   },
 
   navLabel: {
-    color: '#8A958E',
-    fontSize: 9,
     marginTop: 4,
-  },
-
-  activeNavLabel: {
-    color: '#2F7D4A',
+    fontSize: 8,
+    color: '#8A968D',
     fontWeight: '700',
   },
 
-  centerTokenButton: {
-    width: 62,
-    alignItems: 'center',
-    marginTop: -25,
-  },
-
-  tokenButtonCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#2F7D4A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#F6F8F3',
-  },
-
-  centerTokenLabel: {
-    color: '#2F7D4A',
-    fontSize: 9,
-    fontWeight: '700',
-    marginTop: 3,
+  navLabelActive: {
+    color: '#2E7D32',
+    fontWeight: '900',
   },
 });
