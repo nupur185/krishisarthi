@@ -9,7 +9,7 @@ const httpServer = createServer(app);
 
 initializeSocket(httpServer);
 
-httpServer.listen(PORT, () => {
-  console.log(`KrishiSarthi Backend running on http://localhost:${PORT}`);
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`KrishiSarthi Backend running on port ${PORT}`);
   console.log(`Socket.IO server ready`);
 });
