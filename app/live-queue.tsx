@@ -15,8 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { io, Socket } from 'socket.io-client';
 
-const API_BASE_URL = 'http://10.164.217.66:5000/api';
-const SOCKET_BASE_URL = 'http://10.164.217.66:5000';
+const API_BASE_URL = 'https://krishisarthi-backend-32yz.onrender.com/api';
+const SOCKET_BASE_URL = 'https://krishisarthi-backend-32yz.onrender.com';
 
 interface Center {
   id: number;

@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'http://10.164.217.66:5000';
+const API_URL = 'https://krishisarthi-backend-32yz.onrender.com';
 
 export default function OtpScreen() {
   const { mobile } = useLocalSearchParams<{ mobile: string }>();

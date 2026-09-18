@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const API_URL = 'http://10.164.217.66:5000';
+const API_URL = 'https://krishisarthi-backend-32yz.onrender.com';
 
 interface UpcomingBooking {
   id: number;

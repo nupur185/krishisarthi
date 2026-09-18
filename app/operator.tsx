@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 
-const API_URL = 'http://10.164.217.66:5000';
+const API_URL = 'https://krishisarthi-backend-32yz.onrender.com';
 
 // ─────────────────────────────────────────────
 // Types

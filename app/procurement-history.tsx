@@ -11,7 +11,7 @@ import {
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = 'http://10.164.217.66:5000/api';
+const API_BASE_URL = 'https://krishisarthi-backend-32yz.onrender.com/api';
 
 interface ProcurementPayment {
   id: number;

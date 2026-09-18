@@ -22,7 +22,7 @@ type Center = {
 };
 
 
-const API_URL = 'http://10.164.217.66:5000';
+const API_URL = 'https://krishisarthi-backend-32yz.onrender.com';
 
 export default function BookSlotScreen() {
   const router = useRouter();
