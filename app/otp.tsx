@@ -11,10 +11,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'https://krishisarthi-backend-32yz.onrender.com';
+const API_URL =
+  'https://krishisarthi-backend-32yz.onrender.com';
 
 export default function OtpScreen() {
-  const { mobile } = useLocalSearchParams<{ mobile: string }>();
+  const { mobile } =
+    useLocalSearchParams<{ mobile: string }>();
 
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,18 +50,22 @@ export default function OtpScreen() {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Invalid OTP');
+        throw new Error(
+          data.message || 'Invalid OTP'
+        );
       }
 
+      // Backend returns token and farmer inside data.data
       const { token, farmer } = data.data;
 
-      // Store authentication token securely
+      // Save authentication token
       await SecureStore.setItemAsync(
         'authToken',
         token
       );
 
-      // Store logged-in user information securely
+      // SecureStore only accepts strings,
+      // so store the farmer object as JSON.
       await SecureStore.setItemAsync(
         'farmer',
         JSON.stringify(farmer)
@@ -69,8 +75,18 @@ export default function OtpScreen() {
       console.log('Role:', farmer.role);
       console.log('Farmer ID:', farmer.farmerId);
 
-      // Decide where to send the user based on role
-      const isAdmin = farmer.role === 'ADMIN';
+      // Decide destination based on the actual
+      // role returned by the backend.
+      const isOperator =
+        farmer.role === 'OPERATOR';
+
+      const isAdmin =
+        farmer.role === 'ADMIN';
+
+      const destination =
+        isOperator || isAdmin
+          ? '/operator'
+          : '/home';
 
       Alert.alert(
         'Login successful',
@@ -79,16 +95,17 @@ export default function OtpScreen() {
           {
             text: 'Continue',
             onPress: () => {
-              if (isAdmin) {
-                router.replace('/operator');
-              } else {
-                router.replace('/home');
-              }
+              router.replace(destination);
             },
           },
         ]
       );
     } catch (error) {
+      console.error(
+        'OTP verification error:',
+        error
+      );
+
       Alert.alert(
         'Verification failed',
         error instanceof Error
@@ -107,11 +124,15 @@ export default function OtpScreen() {
           onPress={() => router.back()}
           style={styles.backButton}
         >
-          <Text style={styles.backText}>‹ Back</Text>
+          <Text style={styles.backText}>
+            ‹ Back
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.content}>
-          <Text style={styles.icon}>🔐</Text>
+          <Text style={styles.icon}>
+            🔐
+          </Text>
 
           <Text style={styles.title}>
             Verify Mobile Number

@@ -492,7 +492,7 @@ export default function OperatorScreen() {
 
   // Green Valley Center is currently center ID 2.
   // We will make center selection dynamic later.
-  const CENTER_ID = 2;
+  const CENTER_ID = 1;
 
   // ───────────────────────────────────────────
   // Current booking
