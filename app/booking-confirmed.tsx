@@ -15,22 +15,22 @@ export default function BookingConfirmedScreen() {
   const insets = useSafeAreaInsets();
 
   const {
-    centerName = 'Green Valley Center',
-    date = '18 Sep 2026',
-    time = '10:30 AM',
-    crop = 'Wheat',
-    quantity = '32',
-  } = useLocalSearchParams<{
-    centerName?: string;
-    date?: string;
-    time?: string;
-    crop?: string;
-    quantity?: string;
-  }>();
-
-  const bookingId = 'KS-260918-0142';
-  const tokenNumber = 'A-76';
-
+  centerName = 'Green Valley Center',
+  date = '',
+  time = '',
+  crop = 'Wheat',
+  quantity = '',
+  bookingId = '',
+  tokenNumber = '',
+} = useLocalSearchParams<{
+  centerName?: string;
+  date?: string;
+  time?: string;
+  crop?: string;
+  quantity?: string;
+  bookingId?: string;
+  tokenNumber?: string;
+}>();
   return (
     <View style={styles.container}>
       {/* Header */}

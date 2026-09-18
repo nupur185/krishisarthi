@@ -486,6 +486,7 @@ export default function HomeScreen() {
                         hour: 'numeric',
                         minute: '2-digit',
                         hour12: true,
+                        timeZone: 'UTC',
                       }
                     )
                   : '—'}
