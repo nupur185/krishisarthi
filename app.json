@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "krishisarthi",
+    "name": "KrishiSarthi",
     "slug": "krishisarthi",
     "scheme": "krishisarthi",
     "version": "1.0.0",
@@ -11,6 +11,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.krishisarthi.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,6 +29,13 @@
       "expo-font",
       "expo-router",
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2c586f67-9796-4a37-b3af-7deff1050888"
+      }
+    },
+    "owner": "sonam_singh"
   }
 }
