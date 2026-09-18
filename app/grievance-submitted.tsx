@@ -1,309 +1,455 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Pressable,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
+
+const API_BASE_URL = 'http://10.164.217.66:5000/api';
+
+type GrievanceData = {
+  id: number;
+  grievanceId: string;
+  issueType: string;
+  description: string;
+  status: string;
+  bookingId: number | null;
+  booking?: {
+    tokenNumber?: string | null;
+    slot?: {
+      center?: {
+        name?: string | null;
+      } | null;
+    } | null;
+  } | null;
+};
 
 export default function GrievanceSubmittedScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const [grievance, setGrievance] = useState<GrievanceData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchLatestGrievance();
+  }, []);
+
+  const fetchLatestGrievance = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/grievances`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to fetch grievance.');
+      }
+
+      if (data.grievances && data.grievances.length > 0) {
+        setGrievance(data.grievances[0]);
+      }
+    } catch (error) {
+      console.error('Fetch grievance error:', error);
+
+      Alert.alert(
+        'Unable to load grievance',
+        'Your grievance was submitted, but its details could not be loaded right now.'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getIssueLabel = (issueType?: string) => {
+    switch (issueType) {
+      case 'PAYMENT':
+        return 'Payment';
+      case 'QUALITY':
+        return 'Quality';
+      case 'WEIGHTMENT':
+        return 'Weightment';
+      case 'SLOT':
+        return 'Slot';
+      case 'STAFF':
+        return 'Staff';
+      case 'OTHER':
+        return 'Other';
+      default:
+        return issueType || 'Not available';
+    }
+  };
+
+  const getStatusLabel = (status?: string) => {
+    switch (status) {
+      case 'OPEN':
+        return 'Submitted';
+      case 'IN_REVIEW':
+        return 'In Review';
+      case 'RESOLVED':
+        return 'Resolved';
+      case 'REJECTED':
+        return 'Rejected';
+      default:
+        return status || 'Submitted';
+    }
+  };
+
+  const tokenNumber =
+    grievance?.booking?.tokenNumber || 'Not linked';
+
+  const centerName =
+    grievance?.booking?.slot?.center?.name || 'Not linked';
+
   return (
-    <View style={styles.container}>
-      <View
-        style={[
-          styles.content,
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={[
+          styles.container,
           {
-            paddingTop: insets.top + 40,
+            paddingBottom: insets.bottom + 32,
           },
         ]}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
       >
         {/* Success Icon */}
-        <View style={styles.successCircle}>
-          <Ionicons
-            name="checkmark"
-            size={48}
-            color="#FFFFFF"
-          />
+        <View style={styles.successIcon}>
+          <Ionicons name="checkmark" size={54} color="#FFFFFF" />
         </View>
 
-        <Text style={styles.title}>
-          Grievance Submitted
-        </Text>
+        {/* Title */}
+        <Text style={styles.title}>Grievance Submitted</Text>
 
         <Text style={styles.subtitle}>
-          Your grievance has been successfully recorded.
-          Our team will review it and update you through
-          the app.
+          Your grievance has been successfully{'\n'}
+          recorded. Our team will review it and{'\n'}
+          update you through the app.
         </Text>
 
-        {/* Grievance ID */}
-        <View style={styles.idCard}>
-          <Text style={styles.idLabel}>
-            GRIEVANCE ID
-          </Text>
+        {/* Grievance ID Card */}
+        <View style={styles.grievanceCard}>
+          <Text style={styles.cardLabel}>GRIEVANCE ID</Text>
 
-          <Text style={styles.idValue}>
-            GRV-260918-0047
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator
+              size="small"
+              color="#277A4B"
+              style={styles.loader}
+            />
+          ) : (
+            <Text style={styles.grievanceId}>
+              {grievance?.grievanceId || 'Not available'}
+            </Text>
+          )}
 
           <View style={styles.statusBadge}>
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>
-              Submitted
+              {getStatusLabel(grievance?.status)}
             </Text>
           </View>
         </View>
 
-        {/* Details */}
+        {/* Details Card */}
         <View style={styles.detailsCard}>
-          <DetailRow
-            icon="alert-circle-outline"
-            label="Issue"
-            value="Payment"
-          />
+          {/* Issue */}
+          <View style={styles.detailRow}>
+            <View style={styles.detailIconContainer}>
+              <Ionicons
+                name="alert-circle-outline"
+                size={25}
+                color="#277A4B"
+              />
+            </View>
+
+            <View style={styles.detailTextContainer}>
+              <Text style={styles.detailLabel}>Issue</Text>
+              <Text style={styles.detailValue}>
+                {isLoading
+                  ? 'Loading...'
+                  : getIssueLabel(grievance?.issueType)}
+              </Text>
+            </View>
+          </View>
 
           <View style={styles.divider} />
 
-          <DetailRow
-            icon="ticket-outline"
-            label="Token"
-            value="A-76"
-          />
+          {/* Token */}
+          <View style={styles.detailRow}>
+            <View style={styles.detailIconContainer}>
+              <Ionicons
+                name="ticket-outline"
+                size={25}
+                color="#277A4B"
+              />
+            </View>
+
+            <View style={styles.detailTextContainer}>
+              <Text style={styles.detailLabel}>Token</Text>
+              <Text style={styles.detailValue}>
+                {isLoading ? 'Loading...' : tokenNumber}
+              </Text>
+            </View>
+          </View>
 
           <View style={styles.divider} />
 
-          <DetailRow
-            icon="business-outline"
-            label="Center"
-            value="Green Valley Center"
-          />
+          {/* Center */}
+          <View style={styles.detailRow}>
+            <View style={styles.detailIconContainer}>
+              <Ionicons
+                name="business-outline"
+                size={25}
+                color="#277A4B"
+              />
+            </View>
+
+            <View style={styles.detailTextContainer}>
+              <Text style={styles.detailLabel}>Center</Text>
+              <Text style={styles.detailValue}>
+                {isLoading ? 'Loading...' : centerName}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* Buttons */}
-        <Pressable
-          onPress={() => router.push('/')}
-          style={styles.homeButton}
-        >
-          <Ionicons
-            name="home-outline"
-            size={19}
-            color="#FFFFFF"
-          />
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity
+            style={styles.homeButton}
+            activeOpacity={0.8}
+            onPress={() => router.push('/')}
+          >
+            <Ionicons
+              name="home-outline"
+              size={22}
+              color="#FFFFFF"
+            />
+            <Text style={styles.homeButtonText}>Go to Home</Text>
+          </TouchableOpacity>
 
-          <Text style={styles.homeButtonText}>
-            Go to Home
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>
-            View Grievance Details
-          </Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
-type DetailRowProps = {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
-};
-
-function DetailRow({
-  icon,
-  label,
-  value,
-}: DetailRowProps) {
-  return (
-    <View style={styles.detailRow}>
-      <View style={styles.detailIcon}>
-        <Ionicons
-          name={icon}
-          size={19}
-          color="#2F7D4A"
-        />
-      </View>
-
-      <View style={styles.detailText}>
-        <Text style={styles.detailLabel}>
-          {label}
-        </Text>
-
-        <Text style={styles.detailValue}>
-          {value}
-        </Text>
-      </View>
-    </View>
+          <TouchableOpacity
+            style={styles.detailsButton}
+            activeOpacity={0.8}
+            onPress={() => router.back()}
+          >
+            <Ionicons
+              name="document-text-outline"
+              size={21}
+              color="#277A4B"
+            />
+            <Text style={styles.detailsButtonText}>
+              View Grievance Details
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F7FAF7',
+  },
+
+  scrollView: {
+    flex: 1,
+  },
+
   container: {
-    flex: 1,
-    backgroundColor: '#F6F8F3',
-  },
-
-  content: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: 22,
-    alignItems: 'center',
+    paddingTop: 28,
   },
 
-  successCircle: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
-    backgroundColor: '#2F7D4A',
+  successIcon: {
+    width: 178,
+    height: 178,
+    borderRadius: 89,
+    backgroundColor: '#2E8B57',
+    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 35,
+    marginTop: 8,
+    marginBottom: 32,
   },
 
   title: {
-    color: '#18352A',
-    fontSize: 25,
+    fontSize: 34,
     fontWeight: '800',
-    marginTop: 24,
+    color: '#173B2A',
     textAlign: 'center',
+    marginBottom: 22,
   },
 
   subtitle: {
-    color: '#6E7D74',
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: 'center',
-    marginTop: 10,
-    maxWidth: 330,
-  },
-
-  idCard: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-    marginTop: 28,
-  },
-
-  idLabel: {
-    color: '#8A958E',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-
-  idValue: {
-    color: '#18352A',
     fontSize: 20,
+    lineHeight: 30,
+    color: '#68746D',
+    textAlign: 'center',
+    marginBottom: 34,
+  },
+
+  grievanceCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 30,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+
+  cardLabel: {
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: '#8A948E',
+    marginBottom: 16,
+  },
+
+  grievanceId: {
+    fontSize: 28,
     fontWeight: '800',
-    marginTop: 7,
+    color: '#173B2A',
+    textAlign: 'center',
+    marginBottom: 22,
+  },
+
+  loader: {
+    height: 42,
+    marginBottom: 14,
   },
 
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EAF4EC',
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 10,
-    marginTop: 10,
+    backgroundColor: '#E8F4EC',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 13,
   },
 
   statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#2F7D4A',
-    marginRight: 6,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#2E8B57',
+    marginRight: 8,
   },
 
   statusText: {
-    color: '#2F7D4A',
-    fontSize: 10,
+    fontSize: 17,
     fontWeight: '700',
+    color: '#277A4B',
   },
 
   detailsCard: {
-    width: '100%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingHorizontal: 15,
-    marginTop: 14,
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    marginBottom: 28,
   },
 
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    minHeight: 112,
   },
 
-  detailIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#EAF4EC',
+  detailIconContainer: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: '#EAF5EE',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 22,
   },
 
-  detailText: {
-    marginLeft: 11,
+  detailTextContainer: {
     flex: 1,
   },
 
   detailLabel: {
-    color: '#8A958E',
-    fontSize: 10,
+    fontSize: 17,
+    color: '#89928C',
+    marginBottom: 7,
   },
 
   detailValue: {
-    color: '#18352A',
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 3,
+    fontSize: 23,
+    fontWeight: '800',
+    color: '#173B2A',
   },
 
   divider: {
     height: 1,
-    backgroundColor: '#EDF0EC',
+    backgroundColor: '#E4E8E5',
+  },
+
+  buttonsContainer: {
+    width: '100%',
+    marginTop: 2,
   },
 
   homeButton: {
-    width: '100%',
-    height: 52,
-    borderRadius: 15,
-    backgroundColor: '#2F7D4A',
+    minHeight: 62,
+    borderRadius: 18,
+    backgroundColor: '#2E8B57',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 24,
+    paddingHorizontal: 20,
+    marginBottom: 14,
   },
 
   homeButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: '800',
+    marginLeft: 10,
   },
 
-  secondaryButton: {
-    paddingVertical: 16,
+  detailsButton: {
+    minHeight: 60,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#2E8B57',
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
 
-  secondaryButtonText: {
-    color: '#2F7D4A',
-    fontSize: 13,
+  detailsButtonText: {
+    color: '#277A4B',
+    fontSize: 18,
     fontWeight: '700',
+    marginLeft: 10,
   },
 });

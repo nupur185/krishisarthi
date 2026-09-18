@@ -1,4 +1,5 @@
 import prisma from '../config/prisma.js';
+import { NotificationType } from '@prisma/client';
 
 interface CreateBookingInput {
   userId: number;
@@ -51,7 +52,7 @@ export async function createBooking(input: CreateBookingInput) {
       throw new Error('This slot is not available');
     }
 
-    if (slot.slotDate < new Date()) {
+    if (slot.startTime< new Date()) {
       throw new Error('This slot has already passed');
     }
 
@@ -98,30 +99,41 @@ export async function createBooking(input: CreateBookingInput) {
     const tokenNumber = `A-${String(newBookedCount).padStart(2, '0')}`;
 
     const booking = await tx.booking.create({
-      data: {
-        bookingId,
-        userId,
-        slotId,
-        commodity: commodity.trim(),
-        quantityQuintals,
-        status: 'CONFIRMED',
-        tokenNumber,
-        tokenStatus: 'WAITING',
-        estimatedWaitMin,
-      },
+  data: {
+    bookingId,
+    userId,
+    slotId,
+    commodity: commodity.trim(),
+    quantityQuintals,
+    status: 'CONFIRMED',
+    tokenNumber,
+    tokenStatus: 'WAITING',
+    estimatedWaitMin,
+  },
+  include: {
+    slot: {
       include: {
-        slot: {
-          include: {
-            center: true,
-          },
-        },
+        center: true,
       },
-    });
+    },
+  },
+});
 
-    return booking;
-  });
+// Create notification for the farmer after successful booking creation.
+await tx.notification.create({
+  data: {
+    userId,
+    type: NotificationType.BOOKING_CONFIRMED,
+    title: 'Booking Confirmed',
+    message: `Your slot at ${booking.slot.center.name} has been confirmed. Token: ${booking.tokenNumber}.`,
+    bookingId: booking.id,
+  },
+});
+
+return booking;
+});
+
 }
-
 export async function getMyUpcomingBooking(userId: number) {
   const booking = await prisma.booking.findFirst({
     where: {

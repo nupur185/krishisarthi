@@ -8,8 +8,9 @@ import {
   completeCurrentToken,
 } from '../services/queue-service.js';
 
-interface AuthenticatedRequest
-  extends Request {
+import { emitQueueUpdate } from '../config/socket.js';
+
+interface AuthenticatedRequest extends Request {
   user?: {
     userId: number;
     farmerId?: string;
@@ -48,8 +49,7 @@ export async function getMyQueue(
     if (!queue) {
       return res.status(404).json({
         success: false,
-        message:
-          'No upcoming booking found',
+        message: 'No upcoming booking found',
       });
     }
 
@@ -65,8 +65,7 @@ export async function getMyQueue(
 
     return res.status(500).json({
       success: false,
-      message:
-        'Unable to fetch queue status',
+      message: 'Unable to fetch queue status',
     });
   }
 }
@@ -94,8 +93,7 @@ export async function getOperatorQueue(
     if (!centerId || Number.isNaN(centerId)) {
       return res.status(400).json({
         success: false,
-        message:
-          'Valid center ID is required',
+        message: 'Valid center ID is required',
       });
     }
 
@@ -172,6 +170,9 @@ export async function callNext(
       });
     }
 
+    // Notify all clients watching this center.
+    emitQueueUpdate(centerId);
+
     return res.status(200).json({
       success: true,
       message:
@@ -226,16 +227,14 @@ export async function changeStage(
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          'Valid center ID is required',
+        message: 'Valid center ID is required',
       });
     }
 
     if (!validStages.includes(stage)) {
       return res.status(400).json({
         success: false,
-        message:
-          'Invalid procurement stage',
+        message: 'Invalid procurement stage',
       });
     }
 
@@ -245,10 +244,12 @@ export async function changeStage(
         stage
       );
 
+    // Notify all clients watching this center.
+    emitQueueUpdate(centerId);
+
     return res.status(200).json({
       success: true,
-      message:
-        'Procurement stage updated',
+      message: 'Procurement stage updated',
       data: queue,
     });
   } catch (error) {
@@ -289,8 +290,7 @@ export async function completeToken(
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          'Valid center ID is required',
+        message: 'Valid center ID is required',
       });
     }
 
@@ -298,6 +298,9 @@ export async function completeToken(
       await completeCurrentToken(
         centerId
       );
+
+    // Notify all clients watching this center.
+    emitQueueUpdate(centerId);
 
     return res.status(200).json({
       success: true,

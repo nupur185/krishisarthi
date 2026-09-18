@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, NotificationType, } from '@prisma/client';
 
 import prisma from '../config/prisma.js';
 
@@ -321,6 +321,15 @@ export async function updateQuality(
   if (!validGrades.includes(input.qualityGrade)) {
     throw new Error('Invalid quality grade');
   }
+     const existingProcurement =
+  await prisma.procurementRecord.findUnique({
+    where: {
+      bookingId,
+    },
+    select: {
+      status: true,
+    },
+  });
 
   const procurement =
     await prisma.procurementRecord.upsert({
@@ -369,6 +378,17 @@ export async function updateQuality(
       },
     });
 
+    if (existingProcurement?.status !== 'QUALITY_CHECK') {
+  await prisma.notification.create({
+    data: {
+      userId: booking.userId,
+      type: NotificationType.PROCUREMENT_UPDATE,
+      title: 'Quality Check Completed',
+      message: `Quality check for token ${booking.tokenNumber} has been completed. Grade: ${input.qualityGrade}.`,
+      bookingId: booking.id,
+    },
+  });
+}
   return procurement;
 }
 
@@ -425,6 +445,15 @@ export async function updateWeight(
       'Net weight must be greater than zero'
     );
   }
+ const existingProcurement =
+  await prisma.procurementRecord.findUnique({
+    where: {
+      bookingId,
+    },
+    select: {
+      status: true,
+    },
+  }); 
 
   const procurement =
     await prisma.procurementRecord.upsert({
@@ -468,6 +497,18 @@ export async function updateWeight(
         status: 'WEIGHTMENT',
       },
     });
+
+    if (existingProcurement?.status !== 'WEIGHTMENT') {
+  await prisma.notification.create({
+    data: {
+      userId: booking.userId,
+      type: NotificationType.PROCUREMENT_UPDATE,
+      title: 'Weightment Completed',
+      message: `Weightment for token ${booking.tokenNumber} has been completed. Net weight: ${netWeight.toFixed(2)} quintals.`,
+      bookingId: booking.id,
+    },
+  });
+}
 
   return procurement;
 }
@@ -540,31 +581,46 @@ export async function finalizeProcurement(
     input.acceptedQuantityQuintals *
     input.mspPerQuintal;
 
-  const procurement =
-    await prisma.procurementRecord.update({
-      where: {
-        bookingId,
-      },
+  const previousStatus =
+  booking.procurement.status;
 
-      data: {
-        acceptedQuantityQuintals:
-          decimal(
-            input.acceptedQuantityQuintals
-          ),
+const procurement =
+  await prisma.procurementRecord.update({
+    where: {
+      bookingId,
+    },
 
-        mspPerQuintal:
-          decimal(
-            input.mspPerQuintal
-          ),
+    data: {
+      acceptedQuantityQuintals:
+        decimal(
+          input.acceptedQuantityQuintals
+        ),
 
-        procurementAmount:
-          decimal(amount),
+      mspPerQuintal:
+        decimal(
+          input.mspPerQuintal
+        ),
 
-        status: 'FINALIZATION',
-      },
-    });
+      procurementAmount:
+        decimal(amount),
 
-  return procurement;
+      status: 'FINALIZATION',
+    },
+  });
+
+if (previousStatus !== 'FINALIZATION') {
+  await prisma.notification.create({
+    data: {
+      userId: booking.userId,
+      type: NotificationType.PROCUREMENT_UPDATE,
+      title: 'Procurement Finalized',
+      message: `Procurement for token ${booking.tokenNumber} has been finalized. Accepted quantity: ${input.acceptedQuantityQuintals.toFixed(2)} quintals.`,
+      bookingId: booking.id,
+    },
+  });
+}
+
+return procurement;
 }
 
 // ============================================
@@ -688,17 +744,33 @@ export async function completeProcurement(
         // ----------------------------------------
         // 3. Complete booking/token
         // ----------------------------------------
+     await tx.booking.update({
+  where: {
+    id: bookingId,
+  },
 
-        await tx.booking.update({
-          where: {
-            id: bookingId,
-          },
+  data: {
+    status: 'COMPLETED',
+    tokenStatus: 'COMPLETED',
+  },
+});
 
-          data: {
-            status: 'COMPLETED',
-            tokenStatus: 'COMPLETED',
-          },
-        });
+// ----------------------------------------
+// 3.5. Notify farmer
+// ----------------------------------------
+
+if (procurement.status !== 'COMPLETED') {
+  await tx.notification.create({
+    data: {
+      userId: booking.userId,
+      type: NotificationType.PROCUREMENT_UPDATE,
+      title: 'Procurement Completed',
+      message: `Procurement for token ${booking.tokenNumber} has been completed successfully.`,
+      bookingId: booking.id,
+    },
+  });
+}
+        
 
         // ----------------------------------------
         // 4. Update queue state

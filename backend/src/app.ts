@@ -9,6 +9,10 @@ import slotRoutes from './routes/slot-routes.js';
 import queueRoutes from './routes/queue-routes.js';
 import procurementRoutes from './routes/procurement-routes';
 import paymentRoutes from './routes/payment-routes.js';
+import notificationRoutes from './routes/notification-routes.js';
+import commodityPriceRoutes from './routes/commodity-price-routes.js';
+import grievanceRoutes from './routes/grievance.routes.js';
+import adminGrievanceRoutes from './routes/admin-grievance.routes.js';
 
 const app = express();
 
@@ -51,5 +55,17 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/queue', queueRoutes);
 
 app.use('/api/procurement', procurementRoutes);
+
+app.use('/api/notifications', notificationRoutes);
+
+// Commodity / Mandi Prices
+app.use('/api/commodity-prices', commodityPriceRoutes);
+
+app.use('/api/grievances', grievanceRoutes);
+
+app.use(
+  '/api/admin/grievances',
+  adminGrievanceRoutes
+);
 
 export default app;

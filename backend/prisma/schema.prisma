@@ -85,6 +85,44 @@ enum PaymentStatus {
 }
 
 // ==============================
+// NOTIFICATION TYPE
+// ==============================
+
+enum NotificationType {
+  BOOKING_CONFIRMED
+  TOKEN_GENERATED
+  QUEUE_UPDATE
+  PROCUREMENT_UPDATE
+  PAYMENT_UPDATE
+  SLOT_UPDATE
+  SYSTEM
+}
+
+// ==============================
+// GRIEVANCE ISSUE TYPE
+// ==============================
+
+enum GrievanceIssueType {
+  PAYMENT
+  QUALITY
+  WEIGHTMENT
+  SLOT
+  STAFF
+  OTHER
+}
+
+// ==============================
+// GRIEVANCE STATUS
+// ==============================
+
+enum GrievanceStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  REJECTED
+}
+
+// ==============================
 // USER / FARMER
 // ==============================
 
@@ -111,7 +149,9 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bookings Booking[]
+  bookings      Booking[]
+  notifications Notification[]
+  grievances    Grievance[]
 }
 
 // ==============================
@@ -195,9 +235,13 @@ model Booking {
   slot Slot @relation(fields: [slotId], references: [id])
 
   // One booking can have one procurement record.
-  // Optional because procurement starts only when
-  // the farmer reaches the procurement stage.
   procurement ProcurementRecord?
+
+  // Notifications related to this booking.
+  notifications Notification[]
+
+  // Grievances raised against this booking.
+  grievances Grievance[]
 
   @@index([userId])
   @@index([slotId])
@@ -281,14 +325,13 @@ model ProcurementRecord {
 
   status ProcurementStatus @default(NOT_STARTED)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   completedAt DateTime?
 
   booking Booking @relation(fields: [bookingId], references: [id])
 
   // One procurement can have one payment record.
-  // Payment is created when procurement is completed.
   payment PaymentRecord?
 
   @@index([status])
@@ -311,7 +354,6 @@ model PaymentRecord {
   status PaymentStatus @default(NOT_STARTED)
 
   // Bank/payment transaction reference.
-  // Nullable until payment is initiated.
   bankReference String?
 
   initiatedAt DateTime?
@@ -322,5 +364,121 @@ model PaymentRecord {
 
   procurement ProcurementRecord @relation(fields: [procurementId], references: [id])
 
+  // Notifications related to this payment.
+  notifications Notification[]
+
   @@index([status])
+}
+
+// ==============================
+// NOTIFICATION
+// ==============================
+
+model Notification {
+  id Int @id @default(autoincrement())
+
+  // Farmer/user who receives the notification.
+  userId Int
+
+  // Type of notification.
+  type NotificationType
+
+  // Notification content.
+  title   String
+  message String
+
+  // Whether the farmer has opened/read the notification.
+  isRead Boolean @default(false)
+
+  // Optional references to related records.
+  bookingId Int?
+  paymentId Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations.
+  user User @relation(fields: [userId], references: [id])
+
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  payment PaymentRecord? @relation(fields: [paymentId], references: [id])
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([bookingId])
+  @@index([paymentId])
+}
+
+// ==============================
+// GRIEVANCE
+// ==============================
+
+model Grievance {
+  id Int @id @default(autoincrement())
+
+  // Unique grievance reference shown to the farmer/admin.
+  grievanceId String @unique
+
+  // Farmer who submitted the grievance.
+  userId Int
+
+  // Optional booking/procurement reference.
+  // A grievance can exist without a specific booking.
+  bookingId Int?
+
+  // Category selected by the farmer.
+  issueType GrievanceIssueType
+
+  // Farmer's explanation of the problem.
+  description String
+
+  // Optional supporting photo.
+  // Actual image storage can be integrated later.
+  photoUrl String?
+
+  // Current grievance lifecycle status.
+  status GrievanceStatus @default(OPEN)
+
+  // Response/resolution entered by operator/admin.
+  resolutionNote String?
+
+  // Time when grievance was resolved/rejected.
+  resolvedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations.
+  user User @relation(fields: [userId], references: [id])
+
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  // Indexes for farmer and admin queries.
+  @@index([userId, createdAt])
+  @@index([bookingId])
+  @@index([issueType])
+  @@index([status])
+}
+
+// ==============================
+// COMMODITY / MANDI PRICE
+// ==============================
+
+model CommodityPrice {
+  id          Int      @id @default(autoincrement())
+  commodity   String
+  marketName  String
+  district    String
+  state       String
+  pricePerQuintal Decimal @db.Decimal(10, 2)
+  unit        String   @default("quintal")
+  source      String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([commodity])
+  @@index([district])
+  @@index([state])
+  @@index([marketName])
 }

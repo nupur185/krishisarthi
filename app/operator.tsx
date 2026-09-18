@@ -219,6 +219,72 @@ interface PaymentResponse {
   data: PaymentRecord[];
 }
 
+type GrievanceIssueType =
+  | 'PAYMENT'
+  | 'QUALITY'
+  | 'WEIGHTMENT'
+  | 'SLOT'
+  | 'STAFF'
+  | 'OTHER';
+
+type GrievanceStatus =
+  | 'OPEN'
+  | 'IN_REVIEW'
+  | 'RESOLVED'
+  | 'REJECTED';
+
+interface AdminGrievance {
+  id: number;
+  grievanceId: string;
+  userId: number;
+  bookingId: number | null;
+  issueType: GrievanceIssueType;
+  description: string;
+  photoUrl: string | null;
+  status: GrievanceStatus;
+  resolutionNote: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: number;
+    farmerId: string;
+    fullName: string;
+    mobile: string;
+    district: string | null;
+    state: string | null;
+  };
+  booking: {
+    id: number;
+    bookingId: string;
+    commodity: string;
+    quantityQuintals: number | string;
+    tokenNumber: string | null;
+    status: string;
+    tokenStatus: string;
+    slot: {
+      slotDate: string;
+      startTime: string;
+      endTime: string;
+      center: {
+        id: number;
+        name: string;
+      };
+    };
+  } | null;
+}
+
+interface AdminGrievanceListResponse {
+  success: boolean;
+  grievances?: AdminGrievance[];
+}
+
+interface AdminGrievanceResponse {
+  success: boolean;
+  grievance?: AdminGrievance;
+  message?: string;
+}
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
@@ -250,6 +316,39 @@ const procurementStatusLabels: Record<
   COMPLETED: 'Completed',
   REJECTED: 'Rejected',
 };
+
+const grievanceIssueLabels: Record<GrievanceIssueType, string> = {
+  PAYMENT: 'Payment',
+  QUALITY: 'Quality',
+  WEIGHTMENT: 'Weightment',
+  SLOT: 'Slot',
+  STAFF: 'Staff',
+  OTHER: 'Other',
+};
+
+const grievanceStatusLabels: Record<GrievanceStatus, string> = {
+  OPEN: 'Open',
+  IN_REVIEW: 'In Review',
+  RESOLVED: 'Resolved',
+  REJECTED: 'Rejected',
+};
+
+function formatDateTime(value: string | null) {
+  if (!value) return '--';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return '--';
+
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
 
 function formatTime(time: string) {
   if (!time) return '--';
@@ -346,6 +445,23 @@ export default function OperatorScreen() {
 
   const [payments, setPayments] =
     useState<PaymentRecord[]>([]);
+
+  const [grievances, setGrievances] =
+    useState<AdminGrievance[]>([]);
+  const [grievanceFilter, setGrievanceFilter] =
+    useState<'ALL' | GrievanceStatus>('ALL');
+  const [selectedGrievanceId, setSelectedGrievanceId] =
+    useState<string | null>(null);
+  const [selectedGrievance, setSelectedGrievance] =
+    useState<AdminGrievance | null>(null);
+  const [grievanceLoading, setGrievanceLoading] =
+    useState(false);
+  const [grievanceDetailLoading, setGrievanceDetailLoading] =
+    useState(false);
+  const [grievanceActionLoading, setGrievanceActionLoading] =
+    useState(false);
+  const [resolutionNote, setResolutionNote] =
+    useState('');
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -671,6 +787,220 @@ export default function OperatorScreen() {
   }, [token]);
 
   // ───────────────────────────────────────────
+  // Fetch Admin Grievances
+  // ───────────────────────────────────────────
+
+  const fetchGrievances = useCallback(async () => {
+    try {
+      setGrievanceLoading(true);
+
+      const authToken =
+        token ??
+        (await SecureStore.getItemAsync('authToken'));
+
+      if (!authToken) {
+        router.replace('/welcome');
+        return;
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/admin/grievances`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const data: AdminGrievanceListResponse =
+        await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.success === false
+            ? 'Unable to load grievances.'
+            : 'Grievance request failed.'
+        );
+      }
+
+      setGrievances(data.grievances ?? []);
+
+      if (selectedGrievanceId) {
+        const updated = (data.grievances ?? []).find(
+          (item) => item.grievanceId === selectedGrievanceId
+        );
+        if (updated) {
+          setSelectedGrievance(updated);
+          setResolutionNote(updated.resolutionNote ?? '');
+        }
+      }
+    } catch (error) {
+      console.error('Grievance fetch error:', error);
+
+      Alert.alert(
+        'Unable to load grievances',
+        error instanceof Error
+          ? error.message
+          : 'Unable to load grievance records.'
+      );
+    } finally {
+      setGrievanceLoading(false);
+    }
+  }, [token, selectedGrievanceId]);
+
+  // ───────────────────────────────────────────
+  // Load Grievance Details
+  // ───────────────────────────────────────────
+
+  const openGrievanceDetails = async (grievanceId: string) => {
+    try {
+      setSelectedGrievanceId(grievanceId);
+      setGrievanceDetailLoading(true);
+
+      const authToken =
+        token ??
+        (await SecureStore.getItemAsync('authToken'));
+
+      if (!authToken) {
+        router.replace('/welcome');
+        return;
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/admin/grievances/${encodeURIComponent(grievanceId)}`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const data: AdminGrievanceResponse =
+        await response.json();
+
+      if (!response.ok || !data.success || !data.grievance) {
+        throw new Error(
+          data.message || 'Unable to load grievance details.'
+        );
+      }
+
+      setSelectedGrievance(data.grievance);
+      setResolutionNote(data.grievance.resolutionNote ?? '');
+    } catch (error) {
+      console.error('Grievance detail error:', error);
+
+      setSelectedGrievanceId(null);
+      setSelectedGrievance(null);
+
+      Alert.alert(
+        'Unable to load grievance',
+        error instanceof Error
+          ? error.message
+          : 'Unable to load grievance details.'
+      );
+    } finally {
+      setGrievanceDetailLoading(false);
+    }
+  };
+
+  const closeGrievanceDetails = () => {
+    setSelectedGrievanceId(null);
+    setSelectedGrievance(null);
+    setResolutionNote('');
+  };
+
+  // ───────────────────────────────────────────
+  // Update Grievance Status
+  // ───────────────────────────────────────────
+
+  const handleGrievanceStatusUpdate = async (
+    status: GrievanceStatus
+  ) => {
+    if (!selectedGrievance) return;
+
+    const note = resolutionNote.trim();
+
+    if ((status === 'RESOLVED' || status === 'REJECTED') && !note) {
+      Alert.alert(
+        'Resolution note required',
+        'Please enter a resolution note before resolving or rejecting this grievance.'
+      );
+      return;
+    }
+
+    try {
+      setGrievanceActionLoading(true);
+
+      const authToken =
+        token ??
+        (await SecureStore.getItemAsync('authToken'));
+
+      if (!authToken) {
+        router.replace('/welcome');
+        return;
+      }
+
+      const response = await fetch(
+        `${API_URL}/api/admin/grievances/${encodeURIComponent(
+          selectedGrievance.grievanceId
+        )}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            status,
+            resolutionNote: note || undefined,
+          }),
+        }
+      );
+
+      const data: AdminGrievanceResponse =
+        await response.json();
+
+      if (!response.ok || !data.success || !data.grievance) {
+        throw new Error(
+          data.message || 'Unable to update grievance status.'
+        );
+      }
+
+      const updatedGrievance = data.grievance;
+
+      setSelectedGrievance(updatedGrievance);
+      setResolutionNote(updatedGrievance.resolutionNote ?? '');
+      setGrievances((current) =>
+        current.map((item) =>
+          item.grievanceId === updatedGrievance.grievanceId
+            ? updatedGrievance
+            : item
+        )
+      );
+
+      Alert.alert(
+        'Grievance updated',
+        `Status changed to ${grievanceStatusLabels[status]}.`
+      );
+    } catch (error) {
+      console.error('Grievance update error:', error);
+
+      Alert.alert(
+        'Grievance update failed',
+        error instanceof Error
+          ? error.message
+          : 'Unable to update grievance.'
+      );
+    } finally {
+      setGrievanceActionLoading(false);
+    }
+  };
+
+  // ───────────────────────────────────────────
   // Payment action
   // ───────────────────────────────────────────
 
@@ -744,6 +1074,7 @@ export default function OperatorScreen() {
         await Promise.all([
           fetchQueue(),
           fetchPayments(),
+          fetchGrievances(),
         ]);
       }
     };
@@ -773,6 +1104,7 @@ export default function OperatorScreen() {
 
     await fetchQueue();
     await fetchPayments();
+    await fetchGrievances();
 
     if (currentBooking?.id) {
       await fetchProcurement(currentBooking.id);
@@ -2350,6 +2682,323 @@ export default function OperatorScreen() {
           )}
         </View>
 
+        {/* Grievance Management */}
+
+        <Text style={styles.sectionTitle}>
+          Grievance Management
+        </Text>
+
+        <View style={styles.grievanceSectionCard}>
+          {grievanceLoading ? (
+            <View style={styles.grievanceLoading}>
+              <ActivityIndicator
+                size="small"
+                color="#2E7D32"
+              />
+              <Text style={styles.grievanceLoadingText}>
+                Loading grievances...
+              </Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.grievanceFilterRow}>
+                {(['ALL', 'OPEN', 'IN_REVIEW', 'RESOLVED', 'REJECTED'] as const).map(
+                  (status) => (
+                    <TouchableOpacity
+                      key={status}
+                      style={[
+                        styles.grievanceFilterButton,
+                        grievanceFilter === status &&
+                          styles.grievanceFilterButtonActive,
+                      ]}
+                      onPress={() => setGrievanceFilter(status)}
+                    >
+                      <Text
+                        style={[
+                          styles.grievanceFilterText,
+                          grievanceFilter === status &&
+                            styles.grievanceFilterTextActive,
+                        ]}
+                      >
+                        {status === 'ALL'
+                          ? 'All'
+                          : grievanceStatusLabels[status]}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
+              </View>
+
+              {(() => {
+                const filteredGrievances =
+                  grievanceFilter === 'ALL'
+                    ? grievances
+                    : grievances.filter(
+                        (item) => item.status === grievanceFilter
+                      );
+
+                if (filteredGrievances.length === 0) {
+                  return (
+                    <View style={styles.grievanceEmpty}>
+                      <Text style={styles.emptyTitle}>
+                        No grievances found
+                      </Text>
+                      <Text style={styles.emptyText}>
+                        {grievanceFilter === 'ALL'
+                          ? 'Submitted farmer grievances will appear here.'
+                          : `There are no ${grievanceStatusLabels[grievanceFilter].toLowerCase()} grievances.`}
+                      </Text>
+                    </View>
+                  );
+                }
+
+                return filteredGrievances.map((grievance) => (
+                  <TouchableOpacity
+                    key={grievance.grievanceId}
+                    activeOpacity={0.85}
+                    style={[
+                      styles.grievanceCard,
+                      selectedGrievanceId === grievance.grievanceId &&
+                        styles.grievanceCardActive,
+                    ]}
+                    onPress={() =>
+                      openGrievanceDetails(grievance.grievanceId)
+                    }
+                  >
+                    <View style={styles.grievanceCardTop}>
+                      <View style={styles.grievanceIssueBox}>
+                        <Text style={styles.grievanceIssueText}>
+                          {grievanceIssueLabels[grievance.issueType]}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={[
+                          styles.grievanceStatusBadge,
+                          grievance.status === 'OPEN' &&
+                            styles.grievanceStatusOpen,
+                          grievance.status === 'IN_REVIEW' &&
+                            styles.grievanceStatusReview,
+                          grievance.status === 'RESOLVED' &&
+                            styles.grievanceStatusResolved,
+                          grievance.status === 'REJECTED' &&
+                            styles.grievanceStatusRejected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.grievanceStatusText,
+                            grievance.status === 'OPEN' &&
+                              styles.grievanceStatusTextOpen,
+                            grievance.status === 'IN_REVIEW' &&
+                              styles.grievanceStatusTextReview,
+                            grievance.status === 'RESOLVED' &&
+                              styles.grievanceStatusTextResolved,
+                            grievance.status === 'REJECTED' &&
+                              styles.grievanceStatusTextRejected,
+                          ]}
+                        >
+                          {grievanceStatusLabels[grievance.status]}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.grievanceIdText}>
+                      {grievance.grievanceId}
+                    </Text>
+
+                    <Text style={styles.grievanceFarmerName}>
+                      {grievance.user.fullName}
+                    </Text>
+
+                    <Text style={styles.grievanceFarmerMeta}>
+                      {grievance.user.farmerId} • {grievance.user.mobile}
+                    </Text>
+
+                    <Text
+                      style={styles.grievanceDescriptionPreview}
+                      numberOfLines={2}
+                    >
+                      {grievance.description}
+                    </Text>
+
+                    <Text style={styles.grievanceDateText}>
+                      Submitted {formatDateTime(grievance.createdAt)}
+                    </Text>
+                  </TouchableOpacity>
+                ));
+              })()}
+
+              {selectedGrievanceId && (
+                <View style={styles.grievanceDetailCard}>
+                  {grievanceDetailLoading || !selectedGrievance ? (
+                    <View style={styles.grievanceLoading}>
+                      <ActivityIndicator
+                        size="small"
+                        color="#2E7D32"
+                      />
+                      <Text style={styles.grievanceLoadingText}>
+                        Loading grievance details...
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.grievanceDetailHeader}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.grievanceDetailTitle}>
+                            Grievance Details
+                          </Text>
+                          <Text style={styles.grievanceDetailId}>
+                            {selectedGrievance.grievanceId}
+                          </Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={styles.grievanceCloseButton}
+                          onPress={closeGrievanceDetails}
+                          disabled={grievanceActionLoading}
+                        >
+                          <Text style={styles.grievanceCloseText}>
+                            Close
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.grievanceDetailRow}>
+                        <View style={styles.grievanceDetailColumn}>
+                          <Text style={styles.grievanceDetailLabel}>
+                            Farmer
+                          </Text>
+                          <Text style={styles.grievanceDetailValue}>
+                            {selectedGrievance.user.fullName}
+                          </Text>
+                        </View>
+
+                        <View style={styles.grievanceDetailColumn}>
+                          <Text style={styles.grievanceDetailLabel}>
+                            Farmer ID
+                          </Text>
+                          <Text style={styles.grievanceDetailValue}>
+                            {selectedGrievance.user.farmerId}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.grievanceDetailRow}>
+                        <View style={styles.grievanceDetailColumn}>
+                          <Text style={styles.grievanceDetailLabel}>
+                            Issue Type
+                          </Text>
+                          <Text style={styles.grievanceDetailValue}>
+                            {grievanceIssueLabels[selectedGrievance.issueType]}
+                          </Text>
+                        </View>
+
+                        <View style={styles.grievanceDetailColumn}>
+                          <Text style={styles.grievanceDetailLabel}>
+                            Mobile
+                          </Text>
+                          <Text style={styles.grievanceDetailValue}>
+                            {selectedGrievance.user.mobile}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.grievanceDescriptionBox}>
+                        <Text style={styles.grievanceDetailLabel}>
+                          Description
+                        </Text>
+                        <Text style={styles.grievanceDescriptionText}>
+                          {selectedGrievance.description}
+                        </Text>
+                      </View>
+
+                      {selectedGrievance.booking && (
+                        <View style={styles.grievanceBookingBox}>
+                          <Text style={styles.grievanceDetailLabel}>
+                            Related Booking
+                          </Text>
+                          <Text style={styles.grievanceBookingId}>
+                            {selectedGrievance.booking.bookingId}
+                          </Text>
+                          <Text style={styles.grievanceBookingMeta}>
+                            {selectedGrievance.booking.commodity} •{' '}
+                            {selectedGrievance.booking.quantityQuintals} qtl •{' '}
+                            Token {selectedGrievance.booking.tokenNumber ?? '--'}
+                          </Text>
+                          <Text style={styles.grievanceBookingMeta}>
+                            {selectedGrievance.booking.slot.center.name} •{' '}
+                            {formatTime(selectedGrievance.booking.slot.startTime)}
+                          </Text>
+                        </View>
+                      )}
+
+                      <Text style={styles.grievanceDetailLabel}>
+                        Resolution Note
+                      </Text>
+
+                      <TextInput
+                        value={resolutionNote}
+                        onChangeText={setResolutionNote}
+                        multiline
+                        textAlignVertical="top"
+                        placeholder="Enter review or resolution note"
+                        placeholderTextColor="#9AA39C"
+                        style={styles.grievanceResolutionInput}
+                        editable={!grievanceActionLoading}
+                      />
+
+                      <Text style={styles.grievanceDetailLabel}>
+                        Update Status
+                      </Text>
+
+                      <View style={styles.grievanceActionRow}>
+                        {(['OPEN', 'IN_REVIEW', 'RESOLVED', 'REJECTED'] as const).map(
+                          (status) => (
+                            <TouchableOpacity
+                              key={status}
+                              style={[
+                                styles.grievanceActionButton,
+                                selectedGrievance.status === status &&
+                                  styles.grievanceActionButtonActive,
+                              ]}
+                              disabled={grievanceActionLoading}
+                              onPress={() =>
+                                handleGrievanceStatusUpdate(status)
+                              }
+                            >
+                              {grievanceActionLoading &&
+                              selectedGrievance.status === status ? (
+                                <ActivityIndicator color="#2E7D32" />
+                              ) : (
+                                <Text
+                                  style={[
+                                    styles.grievanceActionButtonText,
+                                    selectedGrievance.status === status &&
+                                      styles.grievanceActionButtonTextActive,
+                                  ]}
+                                >
+                                  {grievanceStatusLabels[status]}
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          )
+                        )}
+                      </View>
+
+                      {selectedGrievance.resolvedAt && (
+                        <Text style={styles.grievanceResolvedText}>
+                          Resolved {formatDateTime(selectedGrievance.resolvedAt)}
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
+            </>
+          )}
+        </View>
+
         {/* Today's Queue */}
 
         <View style={styles.queueHeader}>
@@ -3204,6 +3853,326 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#B3261E',
+  },
+
+  grievanceSectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E0E9E1',
+  },
+
+  grievanceLoading: {
+    minHeight: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  grievanceLoadingText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#778078',
+  },
+
+  grievanceFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginBottom: 12,
+  },
+
+  grievanceFilterButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#D7E1D8',
+    backgroundColor: '#FFFFFF',
+  },
+
+  grievanceFilterButtonActive: {
+    backgroundColor: '#EAF2EA',
+    borderColor: '#2E7D32',
+  },
+
+  grievanceFilterText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#667067',
+  },
+
+  grievanceFilterTextActive: {
+    color: '#2E7D32',
+  },
+
+  grievanceEmpty: {
+    paddingVertical: 18,
+    alignItems: 'center',
+  },
+
+  grievanceCard: {
+    marginTop: 9,
+    padding: 12,
+    borderRadius: 13,
+    backgroundColor: '#F7FAF7',
+    borderWidth: 1,
+    borderColor: '#E2E9E2',
+  },
+
+  grievanceCardActive: {
+    borderColor: '#2E7D32',
+    backgroundColor: '#F2F8F2',
+  },
+
+  grievanceCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  grievanceIssueBox: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
+    backgroundColor: '#EAF2EA',
+  },
+
+  grievanceIssueText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#2E7D32',
+  },
+
+  grievanceStatusBadge: {
+    marginLeft: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+
+  grievanceStatusOpen: {
+    backgroundColor: '#FFF6DF',
+  },
+
+  grievanceStatusReview: {
+    backgroundColor: '#EAF2EA',
+  },
+
+  grievanceStatusResolved: {
+    backgroundColor: '#EAF6EA',
+  },
+
+  grievanceStatusRejected: {
+    backgroundColor: '#FDECEC',
+  },
+
+  grievanceStatusText: {
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
+  grievanceStatusTextOpen: {
+    color: '#8A6B1D',
+  },
+
+  grievanceStatusTextReview: {
+    color: '#2E7D32',
+  },
+
+  grievanceStatusTextResolved: {
+    color: '#2E7D32',
+  },
+
+  grievanceStatusTextRejected: {
+    color: '#B3261E',
+  },
+
+  grievanceIdText: {
+    marginTop: 8,
+    fontSize: 9,
+    color: '#889189',
+  },
+
+  grievanceFarmerName: {
+    marginTop: 3,
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#304234',
+  },
+
+  grievanceFarmerMeta: {
+    marginTop: 2,
+    fontSize: 10,
+    color: '#778078',
+  },
+
+  grievanceDescriptionPreview: {
+    marginTop: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#526057',
+  },
+
+  grievanceDateText: {
+    marginTop: 8,
+    fontSize: 9,
+    color: '#929A93',
+  },
+
+  grievanceDetailCard: {
+    marginTop: 12,
+    padding: 13,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CFE0D0',
+  },
+
+  grievanceDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+
+  grievanceDetailTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#18351D',
+  },
+
+  grievanceDetailId: {
+    marginTop: 3,
+    fontSize: 10,
+    color: '#889189',
+  },
+
+  grievanceCloseButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+    backgroundColor: '#EEF1EE',
+  },
+
+  grievanceCloseText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#667067',
+  },
+
+  grievanceDetailRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 11,
+  },
+
+  grievanceDetailColumn: {
+    flex: 1,
+  },
+
+  grievanceDetailLabel: {
+    marginTop: 8,
+    marginBottom: 5,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    color: '#7A857C',
+  },
+
+  grievanceDetailValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#304234',
+  },
+
+  grievanceDescriptionBox: {
+    padding: 11,
+    borderRadius: 10,
+    backgroundColor: '#F7FAF7',
+    borderWidth: 1,
+    borderColor: '#E2E9E2',
+  },
+
+  grievanceDescriptionText: {
+    marginTop: 5,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#526057',
+  },
+
+  grievanceBookingBox: {
+    marginTop: 10,
+    padding: 11,
+    borderRadius: 10,
+    backgroundColor: '#EAF2EA',
+  },
+
+  grievanceBookingId: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#304234',
+  },
+
+  grievanceBookingMeta: {
+    marginTop: 4,
+    fontSize: 10,
+    lineHeight: 15,
+    color: '#667067',
+  },
+
+  grievanceResolutionInput: {
+    minHeight: 82,
+    borderWidth: 1,
+    borderColor: '#D7E1D8',
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    color: '#304234',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+
+  grievanceActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 2,
+  },
+
+  grievanceActionButton: {
+    minWidth: 74,
+    minHeight: 40,
+    paddingHorizontal: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D7E1D8',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  grievanceActionButtonActive: {
+    backgroundColor: '#EAF2EA',
+    borderColor: '#2E7D32',
+  },
+
+  grievanceActionButtonText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#667067',
+  },
+
+  grievanceActionButtonTextActive: {
+    color: '#2E7D32',
+  },
+
+  grievanceResolvedText: {
+    marginTop: 10,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2E7D32',
   },
 
   queueHeader: {

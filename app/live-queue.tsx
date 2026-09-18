@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,8 +13,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
+import { io, Socket } from 'socket.io-client';
 
 const API_BASE_URL = 'http://10.164.217.66:5000/api';
+const SOCKET_BASE_URL = 'http://10.164.217.66:5000';
 
 interface Center {
   id: number;
@@ -293,6 +296,8 @@ export default function LiveQueueScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const socketRef = useRef<Socket | null>(null);
+
   const [booking, setBooking] = useState<Booking | null>(null);
   const [queue, setQueue] = useState<QueueData | null>(null);
 
@@ -376,6 +381,16 @@ export default function LiveQueueScreen() {
 
         setBooking(currentBooking);
 
+        console.log(
+  'LIVE QUEUE BOOKING:',
+  JSON.stringify(currentBooking, null, 2)
+);
+
+console.log(
+  'LIVE QUEUE CENTER ID:',
+  currentBooking?.slot?.center?.id
+);
+
         if (
           queueResponse.ok &&
           queueData.success &&
@@ -407,24 +422,335 @@ export default function LiveQueueScreen() {
     [router]
   );
 
+ 
+useEffect(() => {
+  let mounted = true;
+  let socket: Socket | null = null;
+
+  const centerId = booking?.slot?.center?.id;
+
+  console.log(
+    'Queue Socket effect started. Center ID:',
+    centerId
+  );
+
+  /*
+   * We cannot join a queue room until the booking
+   * contains the procurement center ID.
+   */
+  if (!centerId) {
+    console.log(
+      'Queue Socket: no center ID yet, waiting for booking data.'
+    );
+
+    return;
+  }
+
+  const setupSocket = async () => {
+    try {
+      const token =
+        await SecureStore.getItemAsync('authToken');
+
+      if (!token) {
+        console.warn(
+          'Queue Socket: authentication token not found.'
+        );
+
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      console.log(
+        'Queue Socket: creating connection...',
+        SOCKET_BASE_URL
+      );
+
+      socket = io(SOCKET_BASE_URL, {
+        auth: {
+          token,
+        },
+
+        /*
+         * WebSocket is preferred for the mobile app.
+         */
+        transports: ['websocket'],
+
+        autoConnect: true,
+
+        /*
+         * Useful while debugging connection problems.
+         */
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
+
+      /*
+       * Store the socket reference only while
+       * this screen/effect is still active.
+       */
+      if (mounted) {
+        socketRef.current = socket;
+      }
+
+      /*
+       * -------------------------------------------------
+       * CONNECTED
+       * -------------------------------------------------
+       */
+      socket.on('connect', () => {
+        if (!mounted) {
+          return;
+        }
+
+        console.log(
+          'Socket connected:',
+          socket?.id
+        );
+
+        console.log(
+          'Joining queue center:',
+          centerId
+        );
+
+        /*
+         * IMPORTANT:
+         *
+         * Backend expects the center ID directly:
+         *
+         * queue:join-center -> number
+         *
+         * NOT:
+         * { centerId }
+         */
+        socket?.emit(
+          'queue:join-center',
+          centerId
+        );
+      });
+
+      /*
+       * -------------------------------------------------
+       * QUEUE ROOM JOINED
+       * -------------------------------------------------
+       */
+      socket.on(
+        'queue:joined',
+        (data: { centerId?: number }) => {
+          if (!mounted) {
+            return;
+          }
+
+          console.log(
+            'Queue room joined successfully:',
+            data
+          );
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * REAL-TIME QUEUE UPDATE
+       * -------------------------------------------------
+       *
+       * The backend does NOT send the entire queue.
+       *
+       * It sends:
+       * {
+       *   centerId: 2
+       * }
+       *
+       * Then we fetch the latest queue through REST.
+       */
+      socket.on(
+        'queue:update',
+        (data: { centerId?: number }) => {
+          if (!mounted) {
+            return;
+          }
+
+          console.log(
+            'Real-time queue update received:',
+            data
+          );
+
+          /*
+           * Ignore updates belonging to another center.
+           */
+          if (
+            data?.centerId &&
+            data.centerId !== centerId
+          ) {
+            return;
+          }
+
+          console.log(
+            'Refreshing queue after real-time update...'
+          );
+
+          fetchQueueAndBooking(false);
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * QUEUE ERROR
+       * -------------------------------------------------
+       */
+      socket.on(
+        'queue:error',
+        (message: string) => {
+          if (!mounted) {
+            return;
+          }
+
+          console.warn(
+            'Queue socket error:',
+            message
+          );
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * CONNECTION ERROR
+       * -------------------------------------------------
+       */
+      socket.on(
+        'connect_error',
+        (err) => {
+          if (!mounted) {
+            return;
+          }
+
+          console.warn(
+            'Socket connection error:',
+            err.message
+          );
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * RECONNECTING
+       * -------------------------------------------------
+       */
+      socket.io.on(
+        'reconnect_attempt',
+        (attempt) => {
+          if (!mounted) {
+            return;
+          }
+
+          console.log(
+            'Socket reconnect attempt:',
+            attempt
+          );
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * RECONNECTED
+       * -------------------------------------------------
+       */
+      socket.io.on(
+        'reconnect',
+        (attempt) => {
+          if (!mounted) {
+            return;
+          }
+
+          console.log(
+            'Socket reconnected after attempt:',
+            attempt
+          );
+
+          /*
+           * After reconnecting, join the room again.
+           */
+          socket?.emit(
+            'queue:join-center',
+            centerId
+          );
+        }
+      );
+
+      /*
+       * -------------------------------------------------
+       * DISCONNECTED
+       * -------------------------------------------------
+       */
+      socket.on(
+        'disconnect',
+        (reason) => {
+          console.log(
+            'Socket disconnected:',
+            reason
+          );
+        }
+      );
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+
+      console.warn(
+        'Socket setup error:',
+        err
+      );
+    }
+  };
+
+  setupSocket();
+
+  /*
+   * ---------------------------------------------------
+   * CLEANUP
+   * ---------------------------------------------------
+   */
+  return () => {
+    mounted = false;
+
+    console.log(
+      'Cleaning up queue Socket.IO connection.'
+    );
+
+    if (socket) {
+      console.log(
+        'Leaving queue center:',
+        centerId
+      );
+
+      socket.emit(
+        'queue:leave-center',
+        centerId
+      );
+
+      socket.removeAllListeners();
+      socket.disconnect();
+    }
+
+    if (socketRef.current === socket) {
+      socketRef.current = null;
+    }
+  };
+}, [
+  fetchQueueAndBooking,
+  booking?.slot?.center?.id,
+]);
+  /*
+   * Initial queue fetch only.
+   *
+   * We no longer poll every 5 seconds.
+   * Socket.IO now triggers the refresh whenever
+   * the operator changes the queue.
+   */
   useEffect(() => {
     fetchQueueAndBooking();
-
-    /*
-     * Poll the backend every 5 seconds.
-     *
-     * This means:
-     * Operator changes queue
-     *       ↓
-     * Backend updates
-     *       ↓
-     * Farmer app refreshes automatically
-     */
-    const interval = setInterval(() => {
-      fetchQueueAndBooking(false);
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [fetchQueueAndBooking]);
 
   const handleRefresh = useCallback(() => {
@@ -1117,9 +1443,9 @@ export default function LiveQueueScreen() {
             />
 
             <Text style={styles.centerNoticeText}>
-              Queue status automatically refreshes
-              every 5 seconds from the procurement
-              center's live queue data.
+              Queue status updates automatically in
+              real time when the procurement center
+              changes the queue.
             </Text>
           </View>
         </View>
@@ -1217,7 +1543,7 @@ export default function LiveQueueScreen() {
 
             <Text style={styles.updateText}>
               Your queue position and procurement
-              progress are refreshed automatically.
+              progress update automatically in real time.
             </Text>
           </View>
         </View>
@@ -2052,3 +2378,4 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 });
+

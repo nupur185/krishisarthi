@@ -1,4 +1,5 @@
 import prisma from '../config/prisma.js';
+import { NotificationType } from '@prisma/client';
 
 interface QueueStatus {
   tokenNumber: string;
@@ -408,6 +409,16 @@ export async function callNextToken(
       tokenStatus: 'SERVING',
     },
   });
+
+  await prisma.notification.create({
+  data: {
+    userId: nextBooking.user.id,
+    type: NotificationType.QUEUE_UPDATE,
+    title: 'Your Turn Has Started',
+    message: `Token ${nextBooking.tokenNumber} is now being served at ${center.name}. Please proceed to the procurement area.`,
+    bookingId: nextBooking.id,
+  },
+});
 
   /*
    * Update center queue state.

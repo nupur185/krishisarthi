@@ -42,6 +42,9 @@ export default function HomeScreen() {
   const [farmer, setFarmer] = useState<any>(null);
   const [booking, setBooking] = useState<UpcomingBooking | null>(null);
 
+  const [unreadNotificationCount, setUnreadNotificationCount] =
+    useState(0);
+
   useEffect(() => {
     async function fetchFarmer() {
       try {
@@ -76,46 +79,88 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-  async function fetchUpcomingBooking() {
-    try {
-      const token = await SecureStore.getItemAsync('authToken');
+    async function fetchUpcomingBooking() {
+      try {
+        const token = await SecureStore.getItemAsync('authToken');
 
-      if (!token) {
-        console.log('No authentication token found');
-        return;
-      }
-
-      const response = await fetch(
-        `${API_URL}/api/bookings/my-upcoming`,
-        {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+        if (!token) {
+          console.log('No authentication token found');
+          return;
         }
-      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.log(
-          'Failed to fetch upcoming booking:',
-          data.message
+        const response = await fetch(
+          `${API_URL}/api/bookings/my-upcoming`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
         );
-        return;
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.log(
+            'Failed to fetch upcoming booking:',
+            data.message
+          );
+          return;
+        }
+
+        setBooking(data.data);
+      } catch (error) {
+        console.error(
+          'Error fetching upcoming booking:',
+          error
+        );
       }
-
-      setBooking(data.data);
-    } catch (error) {
-      console.error(
-        'Error fetching upcoming booking:',
-        error
-      );
     }
-  }
 
-  fetchUpcomingBooking();
-}, []);
+    fetchUpcomingBooking();
+  }, []);
+
+  useEffect(() => {
+    async function fetchUnreadNotificationCount() {
+      try {
+        const token = await SecureStore.getItemAsync('authToken');
+
+        if (!token) {
+          console.log('No authentication token found');
+          return;
+        }
+
+        const response = await fetch(
+          `${API_URL}/api/notifications/unread-count`,
+          {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.log(
+            'Failed to fetch unread notification count:',
+            data.message
+          );
+          return;
+        }
+
+        setUnreadNotificationCount(data.data.count);
+      } catch (error) {
+        console.error(
+          'Error fetching unread notification count:',
+          error
+        );
+      }
+    }
+
+    fetchUnreadNotificationCount();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -219,6 +264,7 @@ export default function HomeScreen() {
                   styles.headerAction,
                   pressed && styles.pressedDark,
                 ]}
+                onPress={() => router.push('/notifications')}
               >
                 <Ionicons
                   name="notifications-outline"
@@ -226,7 +272,15 @@ export default function HomeScreen() {
                   color="#FFFFFF"
                 />
 
-                <View style={styles.notificationDot} />
+                {unreadNotificationCount > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationBadgeText}>
+                      {unreadNotificationCount > 9
+                        ? '9+'
+                        : unreadNotificationCount}
+                    </Text>
+                  </View>
+                )}
               </Pressable>
 
 
@@ -237,7 +291,7 @@ export default function HomeScreen() {
                 ]}
               >
                 <Text style={styles.profileLetter}>
-                 {farmer?.fullName?.charAt(0)?.toUpperCase() || 'F'} 
+                  {farmer?.fullName?.charAt(0)?.toUpperCase() || 'F'}
                 </Text>
               </Pressable>
 
@@ -262,7 +316,7 @@ export default function HomeScreen() {
             <View style={styles.nameRow}>
 
               <Text style={styles.farmerName}>
-                 {farmer?.fullName || 'Farmer'}
+                {farmer?.fullName || 'Farmer'}
               </Text>
 
               <View style={styles.verifiedBadge}>
@@ -272,16 +326,16 @@ export default function HomeScreen() {
                   size={14}
                   color={
                     farmer?.verificationStatus === 'VERIFIED'
-    ? '#F4B942'
-    : '#D99A27'
+                      ? '#F4B942'
+                      : '#D99A27'
                   }
                 />
 
                 <Text style={styles.verifiedText}>
-  {farmer?.verificationStatus === 'VERIFIED'
-    ? 'Verified'
-    : 'Verification pending'}
- </Text>
+                  {farmer?.verificationStatus === 'VERIFIED'
+                    ? 'Verified'
+                    : 'Verification pending'}
+                </Text>
 
               </View>
 
@@ -397,15 +451,17 @@ export default function HomeScreen() {
 
               <Text style={styles.appointmentValue}>
                 {booking
-  ? new Date(booking.slot.slotDate).toLocaleDateString(
-      'en-GB',
-      {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      }
-    )
-  : '—'}
+                  ? new Date(
+                      booking.slot.slotDate
+                    ).toLocaleDateString(
+                      'en-GB',
+                      {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      }
+                    )
+                  : '—'}
               </Text>
 
             </View>
@@ -422,15 +478,17 @@ export default function HomeScreen() {
 
               <Text style={styles.appointmentValue}>
                 {booking
-  ? new Date(booking.slot.startTime).toLocaleTimeString(
-      'en-US',
-      {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      }
-    )
-  : '—'}
+                  ? new Date(
+                      booking.slot.startTime
+                    ).toLocaleTimeString(
+                      'en-US',
+                      {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                      }
+                    )
+                  : '—'}
               </Text>
 
             </View>
@@ -555,10 +613,20 @@ export default function HomeScreen() {
             title="Track Payment"
             subtitle="Check payment"
             accent="gold"
-             onPress={() => router.push('/payment')}
+            onPress={() => router.push('/payment')}
           />
 
         </View>
+
+        {/* COMMODITY PRICES */}
+
+<ActionCard
+  icon="pricetag-outline"
+  title="Commodity Prices"
+  subtitle="Check mandi prices"
+  accent="green"
+  onPress={() => router.push('/commodity-prices')}
+/>
 
 
         {/* =====================================================
@@ -602,9 +670,9 @@ export default function HomeScreen() {
               </View>
 
               <Text style={styles.aiDescription}>
-               Current estimated waiting time at{' '}
-{booking?.slot.center.name || 'your selected center'} is{' '}
-{booking?.estimatedWaitMin ?? '—'} minutes.
+                Current estimated waiting time at{' '}
+                {booking?.slot.center.name || 'your selected center'} is{' '}
+                {booking?.estimatedWaitMin ?? '—'} minutes.
               </Text>
 
             </View>
@@ -638,12 +706,12 @@ export default function HomeScreen() {
 
           </View>
 
-          <Pressable>
-
+          <Pressable
+            onPress={() => router.push('/notifications')}
+          >
             <Text style={styles.seeAll}>
               See all
             </Text>
-
           </Pressable>
 
         </View>
@@ -1075,14 +1143,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  notificationDot: {
+  notificationBadge: {
     position: 'absolute',
-    top: 7,
-    right: 7,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    top: 3,
+    right: 3,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
     backgroundColor: '#F4B942',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#123B2A',
+  },
+
+  notificationBadgeText: {
+    color: '#123B2A',
+    fontSize: 7,
+    fontWeight: '900',
   },
 
   profileCircle: {
