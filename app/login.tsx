@@ -11,15 +11,92 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'https://krishisarthi-backend-32yz.onrender.com';
+const API_URL =
+  'https://krishisarthi-backend-32yz.onrender.com';
 
 export default function LoginScreen() {
   const [mobile, setMobile] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /**
+   * Generate a 6-digit OTP locally.
+   *
+   * This is intentionally a demo-only authentication flow.
+   */
+  function generateDemoOtp() {
+    return Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+  }
+
+  /**
+   * Prepare the real backend JWT in the background.
+   *
+   * We deliberately do not await this before opening the OTP screen.
+   * This means the OTP can appear immediately while Render wakes up
+   * and prepares the authenticated session.
+   */
+  async function prepareDemoLogin(
+    mobileNumber: string
+  ) {
+    try {
+      const response = await fetch(
+        `${API_URL}/api/auth/demo-login`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            mobile: mobileNumber,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || 'Unable to prepare demo login'
+        );
+      }
+
+      const { token, farmer } = data.data;
+
+      await SecureStore.setItemAsync(
+        'demoAuthToken',
+        token
+      );
+
+      await SecureStore.setItemAsync(
+        'demoFarmer',
+        JSON.stringify(farmer)
+      );
+
+      await SecureStore.deleteItemAsync(
+        'demoAuthError'
+      );
+    } catch (error) {
+      console.error(
+        'Demo login preparation failed:',
+        error
+      );
+
+      await SecureStore.setItemAsync(
+        'demoAuthError',
+        error instanceof Error
+          ? error.message
+          : 'Unable to prepare demo login'
+      );
+    }
+  }
+
   async function handleLogin() {
-    if (!mobile.trim()) {
+    const cleanedMobile = mobile.trim();
+
+    if (!cleanedMobile) {
       Alert.alert(
         'Missing information',
         'Please enter your mobile number.'
@@ -27,7 +104,7 @@ export default function LoginScreen() {
       return;
     }
 
-    if (!/^\d{10}$/.test(mobile)) {
+    if (!/^\d{10}$/.test(cleanedMobile)) {
       Alert.alert(
         'Invalid mobile number',
         'Please enter a valid 10-digit mobile number.'
@@ -38,41 +115,55 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `${API_URL}/api/auth/request-otp`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            mobile,
-          }),
-        }
+      /*
+       * Clear any previous demo session data.
+       * This prevents an old token from being reused.
+       */
+      await SecureStore.deleteItemAsync(
+        'demoAuthToken'
       );
 
-      const data = await response.json();
+      await SecureStore.deleteItemAsync(
+        'demoFarmer'
+      );
 
-      if (!response.ok || !data.success) {
-        throw new Error(
-          data.message || 'Unable to send OTP'
-        );
-      }
+      await SecureStore.deleteItemAsync(
+        'demoAuthError'
+      );
 
-      // OTP request successful.
-      // Move to OTP verification screen.
+      /*
+       * Generate OTP immediately on the phone.
+       */
+      const demoOtp = generateDemoOtp();
+
+      /*
+       * Start backend JWT preparation in the background.
+       *
+       * IMPORTANT:
+       * We do NOT await this request.
+       */
+      void prepareDemoLogin(cleanedMobile);
+
+      /*
+       * Open OTP screen immediately.
+       */
       router.push({
         pathname: '/otp',
         params: {
-          mobile,
+          mobile: cleanedMobile,
+          demoOtp,
+          demoMode: 'true',
         },
       });
     } catch (error) {
+      console.error(
+        'Login preparation error:',
+        error
+      );
+
       Alert.alert(
         'Login failed',
-        error instanceof Error
-          ? error.message
-          : 'Unable to send OTP. Please try again.'
+        'Unable to start login. Please try again.'
       );
     } finally {
       setLoading(false);
@@ -82,7 +173,11 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={
+        Platform.OS === 'ios'
+          ? 'padding'
+          : undefined
+      }
     >
       <ScrollView
         contentContainerStyle={styles.content}
@@ -98,20 +193,29 @@ export default function LoginScreen() {
         </TouchableOpacity>
 
         <View style={styles.header}>
-          <Text style={styles.logo}>KrishiSarthi</Text>
+          <Text style={styles.logo}>
+            KrishiSarthi
+          </Text>
 
-          <Text style={styles.title}>Welcome back</Text>
+          <Text style={styles.title}>
+            Welcome back
+          </Text>
 
           <Text style={styles.subtitle}>
-            Login to manage your procurement slots, queue and payments.
+            Login to manage your procurement slots,
+            queue and payments.
           </Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.label}>Mobile Number</Text>
+          <Text style={styles.label}>
+            Mobile Number
+          </Text>
 
           <View style={styles.mobileInputContainer}>
-            <Text style={styles.countryCode}>+91</Text>
+            <Text style={styles.countryCode}>
+              +91
+            </Text>
 
             <TextInput
               style={styles.mobileInput}
@@ -125,7 +229,8 @@ export default function LoginScreen() {
           </View>
 
           <Text style={styles.otpInfo}>
-            We'll send a 6-digit OTP to this registered mobile number.
+            Your demo OTP will appear instantly on
+            the next screen.
           </Text>
 
           <TouchableOpacity
@@ -137,7 +242,9 @@ export default function LoginScreen() {
             disabled={loading}
           >
             <Text style={styles.loginButtonText}>
-              {loading ? 'Sending OTP...' : 'Get OTP'}
+              {loading
+                ? 'Preparing...'
+                : 'Get OTP'}
             </Text>
           </TouchableOpacity>
 
@@ -147,7 +254,9 @@ export default function LoginScreen() {
             </Text>
 
             <TouchableOpacity
-              onPress={() => router.push('/register')}
+              onPress={() =>
+                router.push('/register')
+              }
             >
               <Text style={styles.registerLink}>
                 {' '}
@@ -158,7 +267,9 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.securityBox}>
-          <Text style={styles.securityIcon}>🔒</Text>
+          <Text style={styles.securityIcon}>
+            🔒
+          </Text>
 
           <View style={styles.securityContent}>
             <Text style={styles.securityTitle}>
@@ -166,8 +277,8 @@ export default function LoginScreen() {
             </Text>
 
             <Text style={styles.securityText}>
-              KrishiSarthi keeps your farmer and procurement information
-              protected.
+              KrishiSarthi keeps your farmer and
+              procurement information protected.
             </Text>
           </View>
         </View>

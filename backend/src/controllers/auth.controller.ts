@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
+
 import {
   requestOtp,
   verifyOtp,
+  demoLogin,
 } from '../services/auth.service.js';
 
 export async function requestOtpController(
@@ -104,3 +106,51 @@ export async function verifyOtpController(
   }
 }
 
+/**
+ * Demo login controller.
+ *
+ * This does not replace the real OTP verification endpoint.
+ * It only prepares a JWT for demo authentication.
+ */
+export async function demoLoginController(
+  req: Request,
+  res: Response
+) {
+  try {
+    const { mobile } = req.body;
+
+    if (!mobile || typeof mobile !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number is required',
+      });
+    }
+
+    if (!/^\d{10}$/.test(mobile)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mobile number must be 10 digits',
+      });
+    }
+
+    const result = await demoLogin(mobile);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Demo authentication prepared',
+      data: result,
+    });
+  } catch (error) {
+    console.error('Demo login error:', error);
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Unable to prepare demo authentication';
+
+    return res.status(401).json({
+      success: false,
+      message,
+    });
+  }
+}
